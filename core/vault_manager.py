@@ -18,18 +18,30 @@ class VaultManager:
     def save_inbox(self, filename, content):
         return self.save_file(self.inbox_path, filename, content)
 
-    def save_concept(self, filename, content):
-        return self.save_file(self.concepts_path, filename, content)
+    def save_concept(self, filename, content, parent_folder=None):
+        base_dir = self.concepts_path
+        if parent_folder:
+            base_dir = os.path.join(base_dir, parent_folder)
+            
+        os.makedirs(base_dir, exist_ok=True)
+        
+        if not filename.endswith(".md"):
+            filename += ".md"
+            
+        path = os.path.join(base_dir, filename)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return path
         
     def save_daily(self, filename, content):
         return self.save_file(self.daily_path, filename, content)
 
     def get_whitelist_concepts(self):
-        """Retorna a lista (whitelist) de conceitos existentes."""
+        """Retorna a lista (whitelist) de conceitos existentes (busca recursiva)."""
         concepts = set()
-        for folder in [self.concepts_path]:
-            if os.path.exists(folder):
-                for file in os.listdir(folder):
+        if os.path.exists(self.concepts_path):
+            for root, dirs, files in os.walk(self.concepts_path):
+                for file in files:
                     if file.endswith(".md"):
                         concepts.add(file.replace(".md", ""))
         return concepts
@@ -44,3 +56,18 @@ class VaultManager:
                     with open(filepath, "r", encoding="utf-8") as f:
                         content.append(f"[{file}] {f.read().strip()}")
         return "\n".join(content)
+    
+    def build_index(self):
+        self.index = {}
+
+        for root, _, files in os.walk(self.vault_path):
+            for f in files:
+                if f.endswith(".md"):
+                    name = f[:-3].lower()
+                    self.index[name] = os.path.join(root, f)
+
+    def find_note_path(self, title: str):
+        if not hasattr(self, "index"):
+            self.build_index()
+
+        return self.index.get(title.lower())

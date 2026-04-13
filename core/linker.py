@@ -1,4 +1,5 @@
 import re
+import os
 
 class AutoLinker:
     def __init__(self, vault_manager):
@@ -31,3 +32,10 @@ class AutoLinker:
             linked_text = pattern.sub(replace_match, linked_text)
 
         return linked_text
+
+    def create_link(self, source_title, target_title):
+        """Adiciona um link manualmente em uma nota existente se o nó for detectado como duplicado"""
+        source_path = self.vault_manager.find_note_path(source_title)
+        if source_path and os.path.exists(source_path):
+            with open(source_path, "a", encoding="utf-8") as f:
+                f.write(f"\n🔗 [[{target_title}]]\n")

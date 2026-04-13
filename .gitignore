@@ -1,4 +1,4 @@
-# Vault pessoal (NÃO versionar)
+# Vault pessoal
 00_Inbox/
 01_Concepts/
 02_Skills/
@@ -12,6 +12,7 @@
 __pycache__/
 *.pyc
 .venv/
+.env
 
 # logs
 *.log

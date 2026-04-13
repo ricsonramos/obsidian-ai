@@ -1,0 +1,139 @@
+[
+  {
+    "id": "2a67bccb-7ed7-4d53-aa67-e51789facfea",
+    "payload": {
+      "type": "graph",
+      "title": "Redes Neurais",
+      "content": "Redes Neurais",
+      "depth": 1
+    },
+    "status": "done",
+    "retries": 1,
+    "last_error": "'VaultManager' object has no attribute 'vault_path'",
+    "finished_at": "2026-04-13T14:19:28.201889"
+  },
+  {
+    "id": "ec3fcf56-0bf6-45ce-a8d7-8e0152a67838",
+    "payload": {
+      "type": "graph",
+      "title": "Redes Neurais",
+      "content": "Redes Neurais",
+      "depth": 1
+    },
+    "status": "done",
+    "retries": 0,
+    "last_error": null,
+    "created_at": "2026-04-13T14:10:39.687547",
+    "finished_at": "2026-04-13T14:18:17.575092"
+  },
+  {
+    "id": "64d97efa-1b03-40c0-8f60-dd699563b4da",
+    "payload": {
+      "type": "graph",
+      "title": "Redes Neurais",
+      "content": "Modelos computacionais inspirados no cérebro para aprendizado de padrões. Explore fundamentos, arquiteturas (MLP, CNN, RNN) e suas aplicações em IA.",
+      "depth": 1
+    },
+    "status": "done",
+    "retries": 0,
+    "last_error": null,
+    "created_at": "2026-04-13T14:15:17.441772",
+    "finished_at": "2026-04-13T14:18:17.576394"
+  },
+  {
+    "id": "35503316-1f93-45bf-a4ea-129a07761fbf",
+    "payload": {
+      "type": "graph",
+      "title": "Redes Neurais",
+      "content": "Visão geral estruturada sobre Redes Neurais, incluindo conceitos fundamentais, arquiteturas e aplicações.",
+      "depth": 2
+    },
+    "status": "done",
+    "retries": 0,
+    "last_error": null,
+    "created_at": "2026-04-13T14:18:02.358671",
+    "finished_at": "2026-04-13T14:18:17.577757"
+  },
+  {
+    "id": "783e2271-ab94-4f09-b51a-128a0249634d",
+    "payload": {
+      "type": "graph",
+      "title": "Redes Neurais",
+      "content": "Redes Neurais",
+      "depth": 2
+    },
+    "status": "done",
+    "retries": 0,
+    "last_error": null,
+    "created_at": "2026-04-13T14:19:27.461176",
+    "finished_at": "2026-04-13T14:19:28.202803"
+  },
+  {
+    "id": "a34b6d96-5f2f-4ce9-a603-9ddea6293fbe",
+    "payload": {
+      "type": "graph",
+      "title": "cls",
+      "content": "cls",
+      "depth": 2
+    },
+    "status": "done",
+    "retries": 0,
+    "last_error": null,
+    "created_at": "2026-04-13T14:21:23.772012",
+    "finished_at": "2026-04-13T14:21:24.444492"
+  },
+  {
+    "id": "61a321a7-2df5-4516-9c1c-332be59b8875",
+    "payload": {
+      "type": "graph",
+      "title": "Redes Neurais",
+      "content": "Redes Neurais",
+      "depth": 2
+    },
+    "status": "done",
+    "retries": 0,
+    "last_error": null,
+    "created_at": "2026-04-13T14:29:36.481675",
+    "finished_at": "2026-04-13T14:29:36.556663"
+  },
+  {
+    "id": "7b9d053f-0b6d-4ca0-be0c-fc7119d07226",
+    "payload": {
+      "type": "graph",
+      "title": "Redes Neurais",
+      "content": "Redes Neurais",
+      "depth": 2
+    },
+    "status": "done",
+    "retries": 0,
+    "last_error": null,
+    "created_at": "2026-04-13T14:43:14.010767",
+    "finished_at": "2026-04-13T14:43:14.100767"
+  },
+  {
+    "id": "e3914462-11ad-4b33-8159-7334e16ca283",
+    "payload": {
+      "type": "graph",
+      "title": "Redes Neurais",
+      "content": "Redes Neurais",
+      "depth": 3
+    },
+    "status": "pending",
+    "retries": 1,
+    "last_error": "'AutoLinker' object has no attribute 'create_link'",
+    "created_at": "2026-04-13T15:15:02.814132"
+  },
+  {
+    "id": "83c3cc2f-9ca7-4b13-9afe-bc55ee9ccb2e",
+    "payload": {
+      "type": "graph",
+      "title": "Perceptron",
+      "content": "A unidade básica de uma rede neural, responsável por processar e classificar informações. O perceptron realiza uma função de ativação para decidir se um sinal é positivo ou negativo.",
+      "depth": 2
+    },
+    "status": "pending",
+    "retries": 0,
+    "last_error": null,
+    "created_at": "2026-04-13T15:16:28.880230"
+  }
+]
