@@ -1,0 +1,17 @@
+# Vault pessoal (NÃO versionar)
+00_Inbox/
+01_Concepts/
+02_Skills/
+03_Projects/
+04_Daily/
+
+# Obsidian config local
+.obsidian/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# logs
+*.log
