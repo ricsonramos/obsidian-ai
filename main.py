@@ -1,107 +1,81 @@
+import argparse
+from dotenv import load_dotenv
 import os
 import sys
-import re
-from core.brain import Brain
 
+# Garante que scripts usem ./ corretamente no module resolution
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from core.graph_engine import GraphEngine
 
-# =========================================================
-# 🧠 CHAT CLI — GRAPH ONLY MODE
-# =========================================================
-class ChatCLI:
-    def __init__(self):
-        vault_path = os.path.abspath(os.getcwd())
-        self.brain = Brain(vault_path)
+def main():
+    load_dotenv()
 
-        self.stopwords = {
-            "de","da","do","das","dos","e","o","a",
-            "um","uma","para","com","em","no","na",
-            "que","é","os","as"
-        }
+    # Configurações de Segurança e Custo
+    depth_default = int(os.getenv("DEFAULT_DEPTH", "2"))
+    max_tokens_default = int(os.getenv("MAX_TOKENS_BUDGET", "5000")) 
 
-    # =========================================================
-    # 🧠 DUPLICATA SEMÂNTICA SIMPLES
-    # =========================================================
-    def normalize(self, text):
-        text = re.sub(r"[^a-z0-9\s]", "", text.lower())
-        return [t for t in text.split() if t not in self.stopwords]
+    parser = argparse.ArgumentParser(
+        description="Knowledge Engine CLI - Arquiteto Taxonomista para Second Brain",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    
+    # Comandos principais
+    parser.add_argument("command", choices=["graph", "link", "export"], help="Comando de execução")
+    parser.add_argument("topic", nargs="?", default="", help="Conceito base para o mapeamento")
 
-    def similarity(self, a, b):
-        a = set(self.normalize(a))
-        b = set(self.normalize(b))
-        if not a or not b:
-            return 0
-        return len(a & b) / len(a | b)
+    # Parâmetros de Controle (Rigor Acadêmico)
+    parser.add_argument("--depth", type=int, default=depth_default, 
+                        help="Profundidade da árvore. NOTA: Valores > 2 geram alta redundância.")
+    parser.add_argument("--mode", choices=["beginner", "advanced"], default="beginner",
+                        help="Nível de partida do conhecimento (Zero Absoluto vs. Expansão Técnica)")
+    parser.add_argument("--max-tokens", type=int, default=max_tokens_default, 
+                        help="Teto financeiro para evitar loop infinito de tokens.")
+    
+    # Flags de Operação
+    parser.add_argument("--dry-run", action="store_true", help="Simula a árvore sem criar arquivos .md")
+    parser.add_argument("--resume", action="store_true", help="Retoma do último checkpoint (Stage 1)")
+    parser.add_argument("--notebook-lm", action="store_true", 
+                        help="Prepara estrutura de arquivos otimizada para upload no NotebookLM")
 
-    def is_duplicate(self, title):
-        try:
-            existing = self.brain.manager.get_whitelist_concepts()
-        except:
-            return None
+    args = parser.parse_args()
 
-        for t in existing:
-            if self.similarity(title, t) > 0.75:
-                return t
-        return None
+    # Validação de Premissas Críticas
+    if args.command == "graph" and not args.topic:
+        print("❌ ERRO CRÍTICO: O comando 'graph' exige um tópico base.")
+        sys.exit(1)
 
-    # =========================================================
-    # 🧠 PROCESSAMENTO (GRAPH ONLY)
-    # =========================================================
-    def process_input(self, user_input):
+    if args.depth > 3:
+        print(f"⚠️ AVISO: Profundidade {args.depth} detectada. Risco de explosão horizontal e custo elevado.")
+        confirm = input("Deseja continuar? (s/n): ")
+        if confirm.lower() != 's': sys.exit(0)
 
-        title = user_input.strip()
-        depth = 3  # 🔥 FIXO SEMPRE
+    # Inicialização da Engine
+    # Note que passamos o 'mode' para a engine decidir a densidade da taxonomia
+    engine = GraphEngine(
+        dry_run=args.dry_run, 
+        resume=args.resume, 
+        max_tokens_budget=args.max_tokens,
+        user_mode=args.mode,
+        notebook_lm_prep=args.notebook_lm
+    )
 
-        dup = self.is_duplicate(title)
+    try:
+        if args.command == "graph":
+            print(f"🚀 Iniciando Mapeamento: '{args.topic}' (Modo: {args.mode}, Profundidade: {args.depth})")
+            engine.run(args.topic, args.depth)
         
-        if dup:
-            print(f"\n🔗 Nó '{dup}' já existe no Cofre. Vamos expandi-lo e interligá-lo.")
-            title = dup
-            content = "Gerado previamente"
-        else:
-            print(f"\n🧠 Definindo conceito principal: '{title}'...")
-            prompt_def = f"Forneça uma explicação técnica e objetiva em 1 parágrafo sobre '{title}'."
-            content = self.brain.llm.generate(prompt_def)
-            print(f"   ✓ Definição concluída.")
+        elif args.command == "link":
+            print("🔗 Executando AutoLinker (Otimização de Grafos)...")
+            engine.run(args.topic or "AutoLinker Pass", args.depth)
+            
+        elif args.command == "export":
+            print("📦 Consolidando base de conhecimento para NotebookLM...")
+            # Lógica de exportação seria chamada aqui
+            engine.export_for_notebook()
 
-        print(f"\n🧠 Gerando grafo automático (depth={depth})...")
+    except Exception as e:
+        print(f"💥 FALHA NA EXECUÇÃO: {str(e)}")
+        sys.exit(1)
 
-        # 🚀 SEM IA DECIDINDO FLUXO
-        self.brain.graph(title, content, depth)
-        result = self.brain.process()
-
-        print("\n✅ Fluxo finalizado com sucesso!")
-        print(result)
-
-    # =========================================================
-    # 🧠 LOOP
-    # =========================================================
-    def run(self):
-
-        print("\n============================================================")
-        print("🧠 OBSIDIAN AI — GRAPH EXPANSION MODE")
-        print("============================================================")
-        print("💡 Tudo vira grafo automaticamente")
-        print("📊 Profundidade fixa: 3 níveis")
-        print("🚀 Digite qualquer conceito e pressione ENTER")
-        print("❌ exit para sair")
-        print("============================================================\n")
-
-        while True:
-            try:
-                user_input = input("🧠 Você > ").strip()
-
-                if not user_input:
-                    continue
-
-                if user_input.lower() in ["exit", "sair"]:
-                    break
-
-                self.process_input(user_input)
-
-            except KeyboardInterrupt:
-                break
-
-
-# =========================================================
 if __name__ == "__main__":
-    ChatCLI().run()
+    main()
