@@ -41,7 +41,9 @@ class VaultManager:
     def save_node(self, filename: str, content: str, subfolder: str = ""):
         target_dir = self.vault_path
         if subfolder:
-            safe_subfolder = subfolder.replace('"', '').title()
+            # Remove caracteres proibidos no Windows: < > : " / \ | ? *
+            safe_subfolder = re.sub(r'[\<\>\:\"\/\\\|\?\*]', '', subfolder)
+            safe_subfolder = safe_subfolder.strip().title()
             target_dir = os.path.join(self.vault_path, safe_subfolder)
             
         if not os.path.exists(target_dir):

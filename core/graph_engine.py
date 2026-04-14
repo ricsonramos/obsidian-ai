@@ -29,7 +29,8 @@ class GraphEngine:
         self.total_children_accumulated = 0
         self._session_titles = set()
         
-        prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompt.txt")
+        prompt_default = os.path.join(os.path.dirname(__file__), "..", "prompt.txt")
+        prompt_path = os.getenv("PROMPT_PATH", prompt_default)
         try:
             with open(prompt_path, "r", encoding="utf-8") as f:
                 self.master_prompt = f.read()
@@ -44,6 +45,8 @@ class GraphEngine:
         run_stage_1 = self.target_stage in ["all", "1"]
         run_stage_2 = self.target_stage in ["all", "2"]
         run_stage_3 = self.target_stage in ["all", "3"]
+        run_stage_4 = self.target_stage in ["all", "4", "link_all"]
+        run_stage_5 = self.target_stage in ["all", "5", "link_all"]
 
         root_nodes = []
 
@@ -83,6 +86,16 @@ class GraphEngine:
             logging.info("=== STAGE 3: LINK ===")
             if not self.dry_run:
                 self.linker.run()
+                
+        if run_stage_4:
+            logging.info("=== STAGE 4: ACTIVE CROSS-LINK ===")
+            if not self.dry_run:
+                self.linker.cross_link_vault()
+                
+        if run_stage_5:
+            logging.info("=== STAGE 5: SEMANTIC VECTOR BRIDGE ===")
+            if not self.dry_run:
+                self.linker.semantic_link_vault(self.llm)
                  
     def _rank_nodes(self, nodes: List[Dict], limit: int) -> List[Dict]:
         """Num fluxo puro de esqueleto, a relevância repousa em quantos braços válidos a árvore apresentou."""
@@ -93,12 +106,18 @@ class GraphEngine:
         return sorted(nodes, key=lambda x: x.get("_importance_score", 0), reverse=True)[:limit]
 
     def _get_depth_decay_limit(self, current_depth: int) -> int:
+        decay_str = os.getenv("DEPTH_DECAY_LIMITS", "5,3,2")
+        try:
+             limits = [int(x.strip()) for x in decay_str.split(',')]
+        except ValueError:
+             limits = [5, 3, 2]
+             
         if current_depth == 1:
-            return 5
+            return limits[0] if len(limits) > 0 else 5
         elif current_depth == 2:
-            return 3
+            return limits[1] if len(limits) > 1 else 3
         elif current_depth >= 3:
-            return 2
+            return limits[2] if len(limits) > 2 else 2
         return 0
         
     def _check_budget(self) -> bool:
@@ -115,7 +134,8 @@ class GraphEngine:
              return
              
         # Limita pros top ramos 
-        parents_ranked = self._rank_nodes(parent_nodes, limit=5)
+        rank_limit = int(os.getenv("RANK_NODES_LIMIT", "5"))
+        parents_ranked = self._rank_nodes(parent_nodes, limit=rank_limit)
         max_branching_rate = self._get_depth_decay_limit(current_depth)
         
         queue_subconcepts = []

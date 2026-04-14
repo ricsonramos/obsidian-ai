@@ -1,8 +1,7 @@
 # Knowledge Engine — Claude Code Context
 
 ## Visão geral do projeto
-CLI Python que recebe um conceito (ex: "redes neurais"), usa um router híbrido
-Gemini API + Ollama local, e gera um grafo de conhecimento interligado salvo como
+CLI Python que recebe um conceito (ex: "redes neurais"), usa o Gemini API e gera um grafo de conhecimento interligado salvo como
 arquivos Markdown num vault do Obsidian.
 
 ---
@@ -18,11 +17,11 @@ knowledge-engine/
 ├── .env.example                 # template público das variáveis
 ├── requirements.txt
 ├── core/
-│   ├── hybrid_llm.py            # router: Gemini depth=1 → Ollama depth 2+
-│   ├── graph_engine.py          # pipeline 3 estágios: decompose → expand → link
+│   ├── hybrid_llm.py            # router: Exclusivo Gemini API (Chat + Embeddings)
+│   ├── graph_engine.py          # pipeline 5 estágios: decompose → expand → link → regex_link → semantic_link
 │   ├── vault_manager.py         # salva .md no vault do Obsidian
 │   ├── markdown_generator.py    # formata conteúdo como Markdown compatível com Obsidian
-│   └── linker.py                # AutoLinker: injeta [[wikilinks]] entre nós
+│   └── linker.py                # AutoLinker: Auditor, Regex Linker e Semantic Linker
 └── vault/                       # output do vault Obsidian (conteúdo no .gitignore)
 ```
 
@@ -31,14 +30,15 @@ knowledge-engine/
 ## Como rodar
 
 ```bash
-# gerar grafo com depth 2 (raiz via Gemini, filhos via Ollama)
+# gerar grafo completo com todos os 5 estágios
 python main.py graph "redes neurais" --depth 2
 
-# sobrescrever modelo Ollama para essa execução
-python main.py graph "transformers" --depth 3 --ollama-model deepseek-r1:14b
+# rodar apenas a manutenção de links (Estágios 4 e 5)
+python main.py link
 
-# dry run: imprime nós sem salvar no vault
-python main.py graph "backpropagation" --dry-run
+# rodar apenas um estágio específico de links
+python main.py link --stage 4  # Apenas Regex Lexical
+python main.py link --stage 5  # Apenas Semantic Vector
 ```
 
 ---
@@ -48,53 +48,56 @@ python main.py graph "backpropagation" --dry-run
 ```
 GEMINI_API_KEY=your_key_here
 GEMINI_DAILY_LIMIT=40
-OLLAMA_MODEL=qwen3:8b
-OLLAMA_URL=http://localhost:11434/api/generate
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_SEARCH_ENABLED=true
+GEMINI_INPUT_COST=0.10
+GEMINI_OUTPUT_COST=0.40
+
+LLM_MAX_RETRIES=3
+LLM_TIMEOUT=60
+LLM_TEMPERATURE=0.4
+LLM_MAX_OUTPUT_TOKENS=8192
+
 VAULT_PATH=./vault
+DEFAULT_DEPTH=2
+MAX_TOKENS_BUDGET=2000
+PROMPT_PATH=./prompt.txt
+DEPTH_DECAY_LIMITS=5,3,2
+RANK_NODES_LIMIT=5
+SEMANTIC_THRESHOLD=0.82
 ```
 
 ---
 
 ## Stack de LLMs
 
-### Gemini 2.0 Flash (API remota)
-- Endpoint: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`
-- Usado SOMENTE em depth=1 (decomposição do conceito raiz)
-- Quota rastreada por sessão via `self._gemini_calls` e `GEMINI_DAILY_LIMIT`
-- Fallback automático para Ollama se quota esgotada ou se a chamada falhar
-- Temperature: 0.4, maxOutputTokens: 8192
+### Gemini 2.x (API remota)
+- **Chat**: Usado para todas as queries de desdobramento (decomposição e expansão estruturada).
+- **Embeddings**: Usado o modelo `gemini-embedding-001` para o Estágio 5.
 
-### Ollama (local)
-- Endpoint: `http://localhost:11434/api/generate`
-- Modelo padrão: configurável via env (recomendado: `qwen3:8b` ou `deepseek-r1:14b`)
-- Usado para: depth 2+, repair de JSON inválido, passagem do AutoLinker
-- Sempre usar `"stream": false` e timeout de 120s
-
-### Lógica do HybridLLM router
-```
-depth == 1 AND quota_disponivel AND gemini_key presente → Gemini
-caso contrário → Ollama
-falha no Gemini → fallback Ollama (sem lançar exceção)
-```
+### Lógica do LLM router
+O router `HybridLLM` gerencia unicamente a API remota de cloud configurada via `GEMINI_API_KEY`. Possui cache local para embeddings para evitar chamadas redundantes.
 
 ---
 
-## Pipeline do GraphEngine (3 estágios obrigatoriamente separados)
+## Pipeline do GraphEngine (5 estágios)
 
 ### Estágio 1 — DECOMPOSE
-- LLM gera apenas o mapa conceitual: títulos + relações (sem conteúdo ainda)
-- Entrada: conceito raiz + profundidade
-- Saída: lista de `{ title, relations[] }`
+- LLM gera apenas o mapa conceitual: títulos + relações.
 
 ### Estágio 2 — EXPAND
-- Para cada título gerado no estágio 1, chamada LLM isolada gera conteúdo rico
-- Mínimo 150 palavras por nó
-- Cada chamada é independente das outras (sem contexto compartilhado entre filhos)
+- LLM gera conteúdo rico para cada título (mínimo 150 palavras).
 
-### Estágio 3 — LINK
-- AutoLinker varre todos os nós gerados
-- Injeta `[[wikilinks]]` onde títulos de outros nós são mencionados no conteúdo
-- Atualiza os arquivos já salvos no vault
+### Estágio 3 — LINK (Auditor)
+- AutoLinker varre nós gerados e valida links estruturais reportados pelo LLM.
+
+### Estágio 4 — REGEX LINK (Lexical)
+- Scraper local que injeta `[[wikilinks]]` no corpo do texto usando Regex (Zero API cost).
+- Ordena por tamanho de título para evitar colisões.
+
+### Estágio 5 — SEMANTIC LINK (Vector Bridge)
+- Usa Embeddings e Similiaridade de Cosseno para unir "ilhas" de conhecimento.
+- Cache local em `.embeddings_cache.json` baseado em `mtime`.
 
 ---
 
@@ -112,11 +115,6 @@ falha no Gemini → fallback Ollama (sem lançar exceção)
   ]
 }
 ```
-
-### Extração de JSON
-- Usar contagem de profundidade de colchetes (não regex) para lidar com estruturas aninhadas
-- Se parse falhar: chamada secundária ao Ollama para repair do JSON quebrado
-- Se repair também falhar: logar erro e pular o nó (nunca travar o pipeline)
 
 ---
 
@@ -141,59 +139,20 @@ source_depth: {depth}
 - [[Nó Relacionado 2]]
 ```
 
-### Regras para nomes de arquivo
-- Lowercase
-- Espaços → underscores
-- Remover caracteres especiais (acentos, pontuação)
-- Exemplo: "Redes Neurais Convolucionais" → `redes_neurais_convolucionais.md`
-
 ---
 
 ## Regras de desenvolvimento (nunca violar)
 
-1. NUNCA acoplar os 3 estágios do pipeline — cada um deve ser método separado
-2. NUNCA salvar nó no vault antes de passar por `is_valid_node()`
-3. SEMPRE passar `depth` ao `HybridLLM.generate()` para o router funcionar corretamente
-4. SEMPRE usar caminhos absolutos para escrita de arquivos no vault
-5. O `prompt.txt` é lido em runtime por `load_prompt()` — nunca hardcodar o prompt no código
-6. O set `self.visited` usa `.lower()` para deduplicação — títulos no vault preservam o case original
-7. Nós rejeitados por `is_valid_node()` devem ser logados com `[REJECTED]` prefix
+1. NUNCA salvar nó no vault antes de passar por `is_valid_node()`.
+2. SEMPRE usar `gemini-embedding-001` para Stage 5 (v1beta endpoint).
+3. O cache `.embeddings_cache.json` DEVE ser respeitado para economizar API.
+4. O `SEMANTIC_THRESHOLD` controla a agressividade das pontes do Stage 5.
 
 ---
 
-## Gates de qualidade — is_valid_node()
+## Checklist de validação
 
-Um nó é rejeitado se qualquer condição abaixo for verdadeira:
-- `title` vazio ou None
-- `content` vazio ou None
-- `len(content) < 100`
-- título já existe em `self.visited` (case-insensitive)
-- content é substring ou cópia de outro nó já processado
-
----
-
-## Checklist de validação (rodar antes de considerar tarefa concluída)
-
-- [ ] `python main.py graph "redes neurais" --depth 2` roda sem erros
-- [ ] Mínimo 5 arquivos `.md` criados em `./vault/`
-- [ ] Cada arquivo tem frontmatter YAML válido
-- [ ] `[[wikilinks]]` aparecem nas seções de relações
-- [ ] Gemini é chamado apenas 1 vez (depth=1), Ollama faz o resto
-- [ ] Rodar o mesmo comando duas vezes não cria nós duplicados
-- [ ] `--dry-run` não cria nenhum arquivo
-- [ ] Google Search ativo: saída do Gemini contém citações de fontes reais
-- [ ] Modelo Gemini: confirmar que NÃO está usando gemini-2.0-flash
-- [ ] Retry funcionando: forçar 429 e verificar espera de 2s/5s/9s nos logs
-- [ ] Custo logado após cada chamada Gemini bem-sucedida
-
----
-
-## Ordem sugerida de implementação
-
-1. Estrutura de pastas + `.env.example` + `requirements.txt`
-2. `core/hybrid_llm.py` — HybridLLM com Gemini + Ollama + fallback
-3. `prompt.txt` — prompt mestre para knowledge graphs (em português)
-4. `core/graph_engine.py` — GraphEngine com 3 estágios separados
-5. `core/vault_manager.py` + `core/markdown_generator.py` + `core/linker.py`
-6. `main.py` — CLI com argparse
-7. Rodar checklist de validação completo
+- [ ] `python main.py graph "redes neurais" --depth 2` roda com Stage 4 e 5.
+- [ ] `python main.py link` atualiza conexões sem chamar Chat API.
+- [ ] `.embeddings_cache.json` é criado no vault.
+- [ ] Diferentes grafos (ilhas) são unidos na aba "Relações".

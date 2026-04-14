@@ -38,16 +38,20 @@ class HybridLLM:
         
         self.session_tokens += (input_tokens + output_tokens)
 
-        # Preço Gemini 2.5 Flash-Lite: $0.10/1M input, $0.40/1M output
-        input_cost = (input_tokens / 1_000_000) * 0.10
-        output_cost = (output_tokens / 1_000_000) * 0.40
+        # Preço Gemini 2.5 Flash-Lite
+        gemini_in_cost_val = float(os.getenv("GEMINI_INPUT_COST", "0.10"))
+        gemini_out_cost_val = float(os.getenv("GEMINI_OUTPUT_COST", "0.40"))
+        
+        input_cost = (input_tokens / 1_000_000) * gemini_in_cost_val
+        output_cost = (output_tokens / 1_000_000) * gemini_out_cost_val
         total = input_cost + output_cost
 
         print(f"[Gemini] tokens invocação: {int(input_tokens)}in / {int(output_tokens)}out")
         print(f"[Gemini] cache cumulativo tokens árvore: {int(self.session_tokens)} | custo sessão: ${total:.6f} USD")
 
-    def _call_gemini_with_retry(self, prompt: str, system_instruction: str, max_retries: int = 3) -> str | None:
+    def _call_gemini_with_retry(self, prompt: str, system_instruction: str) -> str | None:
         import time
+        max_retries = int(os.getenv("LLM_MAX_RETRIES", "3"))
         for attempt in range(max_retries):
             try:
                 result = self._call_gemini(prompt, system_instruction)
@@ -81,8 +85,8 @@ class HybridLLM:
                 }
             ],
             "generationConfig": {
-                "temperature": 0.4,
-                "maxOutputTokens": 8192
+                "temperature": float(os.getenv("LLM_TEMPERATURE", "0.4")),
+                "maxOutputTokens": int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "8192"))
             }
         }
         
@@ -94,7 +98,8 @@ class HybridLLM:
         if self.search_enabled:
             payload["tools"] = [{"google_search": {}}]
             
-        response = requests.post(url, json=payload, timeout=60)
+        timeout = int(os.getenv("LLM_TIMEOUT", "60"))
+        response = requests.post(url, json=payload, timeout=timeout)
         if not response.ok:
             error_message = response.text
             response.raise_for_status()
@@ -105,3 +110,45 @@ class HybridLLM:
             return data["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError) as e:
             raise ValueError(f"Formato inesperado na resposta do Gemini: {data}") from e
+
+    def get_embedding(self, text: str) -> list[float]:
+        """Adquire representacao vetorial numerica pura (768-D) de um texto para busca RAG usando text-embedding-004."""
+        if not self.gemini_key:
+             return []
+             
+        clean_text = text.replace('\n', ' ').strip()
+        if not clean_text:
+             return []
+             
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={self.gemini_key}"
+        
+        payload = {
+            "model": "models/gemini-embedding-001",
+            "content": {
+                "parts": [{"text": clean_text}]
+            }
+        }
+        
+        import time
+        max_retries = int(os.getenv("LLM_MAX_RETRIES", "3"))
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(url, json=payload, timeout=int(os.getenv("LLM_TIMEOUT", "60")))
+                if response.ok:
+                    data = response.json()
+                    return data.get("embedding", {}).get("values", [])
+                    
+                if response.status_code == 429:
+                     pass
+                else:
+                     logging.error(f"[Embeddings] API Error: {response.text}")
+                     return []
+            except requests.exceptions.RequestException as e:
+                logging.error(f"[Embeddings] Exceção de Rede: {e}")
+                
+            if attempt < max_retries - 1:
+                wait = (2 ** attempt) + 1
+                time.sleep(wait)
+                
+        return []
