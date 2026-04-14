@@ -1,33 +1,55 @@
+import os
+import glob
 import re
 
-class AutoLinker:
-    def __init__(self, vault_manager):
-        self.vault_manager = vault_manager
+class Linker:
+    def __init__(self, vault_path: str):
+        self.vault_path = os.path.abspath(vault_path)
 
-    def apply_semi_auto_links(self, text):
+    def _get_all_titles(self) -> set:
+        """Obtém todos os títulos validos e indexados fisicamente no vault."""
+        titles = set()
+        md_files = glob.glob(os.path.join(self.vault_path, "**", "*.md"), recursive=True)
+        for file_path in md_files:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    match = re.search(r"^#\s+(.+)$", f.read(), re.MULTILINE)
+                    if match:
+                        titles.add(match.group(1).strip().lower())
+            except Exception:
+                pass
+        return titles
+
+    def run(self):
         """
-        SEMI-AUTO: Aplica links APENAS para palavras que já existem no Cofre (Whitelist).
-        Impede explosão descontrolada de novas notas vazias criadas pela IA.
+        Validador de grafos final. O Markdown Generator (através da orientação da engine) já
+        converteu conexões sugeridas no JSON e adicionou [[links]] nos bullets certos.
+        O Linker foi rebaixado para atuar passivamente evitando poluição transversal:
+        Monitorando o surgimento de links fantasmas/projetados para auditoria na tela do motor de observabilidade.
         """
-        whitelist = self.vault_manager.get_whitelist_concepts()
-        if not whitelist:
-            return text
-            
-        # Ordenar os conceitos do mais longo para o mais curto evita overlap
-        # (ex: "Machine Learning" vs "Learning")
-        sorted_concepts = sorted(list(whitelist), key=len, reverse=True)
+        titles = self._get_all_titles()
+        if not titles:
+            return
+
+        dead_links_detected = 0
+        md_files = glob.glob(os.path.join(self.vault_path, "**", "*.md"), recursive=True)
         
-        linked_text = text
-        for concept in sorted_concepts:
-            # Usar regex para casar a palavra isolada (!\w) que não esteja já em um link (!\[)
-            # Match exato em repetição de termos
-            pattern = re.compile(rf'(?<!\[)({re.escape(concept)})(?!\])(?!\w)', re.IGNORECASE)
-            
-            def replace_match(match):
-                matched_text = match.group(1)
-                # O Obsidian permite aliasing: [[Nota|texto na frase]]
-                return f"[[{concept}|{matched_text}]]"
+        for file_path in md_files:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
 
-            linked_text = pattern.sub(replace_match, linked_text)
-
-        return linked_text
+                # Conta dead-links que ainda estão pendentes
+                links = re.findall(r"\[\[(.*?)\]\]", content)
+                for link in links:
+                     clean_link = link.lower().strip()
+                     if clean_link not in titles:
+                          dead_links_detected += 1
+                          
+            except Exception:
+                pass
+                
+        if dead_links_detected > 0:
+             print(f"[AutoLinker | Auditor] Validação de Lacunas: Identificados cerca de {dead_links_detected} Orphan-Links semânticos pre-setados.")
+        else:
+             print("[AutoLinker | Auditor] O tecido criado é autossuficiente (Sem links fantasmas/pendentes).")

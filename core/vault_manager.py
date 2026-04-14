@@ -1,46 +1,53 @@
 import os
+import glob
+import re
 
 class VaultManager:
-    def __init__(self, vault_path):
-        self.vault_path = vault_path
-        self.inbox_path = os.path.join(vault_path, "00_Inbox")
-        self.concepts_path = os.path.join(vault_path, "01_Concepts")
-        self.daily_path = os.path.join(vault_path, "04_Daily")
-
-    def save_file(self, folder, filename, content):
-        if not filename.endswith(".md"):
-            filename += ".md"
-        path = os.path.join(folder, filename)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
-        return path
-
-    def save_inbox(self, filename, content):
-        return self.save_file(self.inbox_path, filename, content)
-
-    def save_concept(self, filename, content):
-        return self.save_file(self.concepts_path, filename, content)
+    def __init__(self, vault_path: str):
+        self.vault_path = os.path.abspath(vault_path)
+        self.visited = set()
         
-    def save_daily(self, filename, content):
-        return self.save_file(self.daily_path, filename, content)
+        if not os.path.exists(self.vault_path):
+            os.makedirs(self.vault_path)
+            
+        self._load_existing_titles()
 
-    def get_whitelist_concepts(self):
-        """Retorna a lista (whitelist) de conceitos existentes."""
-        concepts = set()
-        for folder in [self.concepts_path]:
-            if os.path.exists(folder):
-                for file in os.listdir(folder):
-                    if file.endswith(".md"):
-                        concepts.add(file.replace(".md", ""))
-        return concepts
+    def _load_existing_titles(self):
+        """Lê os arquivos existentes no vault para popular a lista self.visited."""
+        md_files = glob.glob(os.path.join(self.vault_path, "**", "*.md"), recursive=True)
+        for file_path in md_files:
+            # Tentar extrair o título real do Heading 1 "# Title"
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+                    if match:
+                        title = match.group(1).strip()
+                        self.visited.add(title.lower())
+                    else:
+                        # Fallback pro nome do arquivo caso nao tenha H1 padrão
+                        base = os.path.basename(file_path)
+                        name = os.path.splitext(base)[0].replace("_", " ")
+                        self.visited.add(name.lower())
+            except Exception:
+                pass
 
-    def get_inbox_content(self):
-        """Retorna e limpa opcionalmente os inputs do Inbox para sumarização."""
-        content = []
-        if os.path.exists(self.inbox_path):
-            for file in os.listdir(self.inbox_path):
-                if file.endswith(".md"):
-                    filepath = os.path.join(self.inbox_path, file)
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        content.append(f"[{file}] {f.read().strip()}")
-        return "\n".join(content)
+    def add_visited(self, title: str):
+        self.visited.add(title.lower())
+
+    def has_visited(self, title: str) -> bool:
+        return title.lower() in self.visited
+
+    def save_node(self, filename: str, content: str, subfolder: str = ""):
+        target_dir = self.vault_path
+        if subfolder:
+            safe_subfolder = subfolder.replace('"', '').title()
+            target_dir = os.path.join(self.vault_path, safe_subfolder)
+            
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+            
+        filepath = os.path.join(target_dir, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content)
+        return filepath

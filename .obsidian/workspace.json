@@ -1,0 +1,218 @@
+{
+  "main": {
+    "id": "3cca8872a0a05473",
+    "type": "split",
+    "children": [
+      {
+        "id": "9669c798841af298",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "2d96f1afc22fb262",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Visualização em gráfico"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "be197b855c8ad812",
+    "type": "split",
+    "children": [
+      {
+        "id": "e998829d3b6d7d36",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5b26ee2a6acab627",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Explorador de arquivos"
+            }
+          },
+          {
+            "id": "97bb1a80a476ba76",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Procurar"
+            }
+          },
+          {
+            "id": "00ed308e68d61cd8",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Marcadores"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "e6260d762e9210ca",
+    "type": "split",
+    "children": [
+      {
+        "id": "44c309604eb43142",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "649e7d6613b6e521",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Links inversos"
+            }
+          },
+          {
+            "id": "5a4a2cab9416ab1a",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Links de saída"
+            }
+          },
+          {
+            "id": "dcc911194882e03e",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Etiquetas"
+            }
+          },
+          {
+            "id": "01b295be0f39fb2e",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Todas as propriedades"
+            }
+          },
+          {
+            "id": "0132b62aadccf5ef",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Sumário"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Abrir a troca rápida": false,
+      "graph:Abrir visualização em gráfico": false,
+      "canvas:Criar novo canvas": false,
+      "daily-notes:Abrir a nota de hoje": false,
+      "templates:Inserir modelo": false,
+      "command-palette:Abrir paleta de comandos": false,
+      "bases:Criar nova base": false
+    }
+  },
+  "active": "2d96f1afc22fb262",
+  "lastOpenFiles": [
+    "vault/Machine Learning/machine_learning.md",
+    "redes neurais.md",
+    "vault/Machine Learning/aprendizado_por_reforço.md",
+    "vault/Machine Learning/aprendizado_não_supervisionado.md",
+    "vault/Machine Learning/aprendizado_supervisionado.md",
+    "walkthrough.md",
+    "CLAUDE.md",
+    "vault/Machine Learning",
+    "vault/Machine Learning/agrupamento_clustering.md",
+    "machine learning.md",
+    "vault/Machine Learning/regressão.md",
+    "vault/Machine Learning/redução_de_dimensionalidade.md",
+    "vault/Machine Learning/modelos_preditivos.md",
+    "vault/Machine Learning/modelagem_preditiva.md",
+    "vault/Machine Learning/extração_de_padrões.md",
+    "vault/Machine Learning/estatística.md",
+    "vault/Machine Learning/classificação.md",
+    "vault/Machine Learning/análise_de_dados.md",
+    "vault/Machine Learning/algoritmos_de_aprendizado.md",
+    "vault",
+    "01_Concepts/Machine Learning/regressão.md",
+    "01_Concepts/Machine Learning/redução_de_dimensionalidade.md",
+    "01_Concepts/Machine Learning/modelos_preditivos.md",
+    "01_Concepts/Machine Learning/modelagem_preditiva.md",
+    "01_Concepts/Machine Learning/machine_learning.md",
+    "01_Concepts/Machine Learning/extração_de_padrões.md",
+    "01_Concepts/Machine Learning/estatística.md",
+    "01_Concepts/Machine Learning/classificação.md",
+    "01_Concepts/Machine Learning",
+    "core/__pycache__/linker.cpython-314.pyc",
+    "core/__pycache__/markdown_generator.cpython-314.pyc",
+    "core/__pycache__/vault_manager.cpython-314.pyc",
+    "core/__pycache__/hybrid_llm.cpython-314.pyc",
+    "core/__pycache__/graph_engine.cpython-314.pyc",
+    "core/__pycache__",
+    "main.py"
+  ]
+}
