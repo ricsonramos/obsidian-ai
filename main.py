@@ -10,19 +10,22 @@ from core.graph_engine import GraphEngine
 def main():
     load_dotenv()
     
-    # Criar .env se não existir pra evitar erros silêncios, ou apenas focar nos default getters.
-    parser = argparse.ArgumentParser(description="Knowledge Engine CLI - Roteamento em Grafos MD")
+    parser = argparse.ArgumentParser(description="Knowledge Engine CLI - Construtor de Árvores de Estudo (MoC)")
     parser.add_argument("command", choices=["graph"], help="O comando a executar")
-    parser.add_argument("topic", help="Topic base para a pesquisa e mapeamento em grafos")
-    parser.add_argument("--depth", type=int, default=2, help="Profundidade da recursão de expansão via subconcepts")
-    parser.add_argument("--dry-run", action="store_true", help="Executa e passa pelo LLM sem depositar no Vault Local")
-    parser.add_argument("--resume", action="store_true", help="Recupera ultimo stage 1 salvo e pula requisicao do Gemini")
-    parser.add_argument("--stage", choices=["all", "1", "2", "3"], default="all", help="Executa apenas o estagio demarcado (1=Decompose, 2=Expand, 3=Link)")
+    parser.add_argument("topic", help="Conceito base para iniciar mapeamento de ramificações")
+    parser.add_argument("--depth", type=int, default=2, help="Profundidade da recursão arquitetural (evite maior que 3)")
+    parser.add_argument("--dry-run", action="store_true", help="Executa e lista a árvore inferida sem gravar no disco")
+    parser.add_argument("--resume", action="store_true", help="Recupera ultimo stage 1 salvo")
+    parser.add_argument("--stage", choices=["all", "1", "2", "3"], default="all", help="Executar estagios limitados")
+    parser.add_argument("--max-tokens", type=int, default=2000, help="Teto financeiro: aborta a arvore se os tokens escalarem.")
     
     args = parser.parse_args()
     
     if args.command == "graph":
-        engine = GraphEngine(dry_run=args.dry_run, resume=args.resume, target_stage=args.stage)
+        engine = GraphEngine(dry_run=args.dry_run, 
+                             resume=args.resume, 
+                             target_stage=args.stage,
+                             max_tokens_budget=args.max_tokens)
         engine.run(args.topic, args.depth)
 
 if __name__ == "__main__":

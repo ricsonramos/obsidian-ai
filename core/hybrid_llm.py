@@ -12,6 +12,7 @@ class HybridLLM:
         self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
         self.search_enabled = os.getenv("GEMINI_SEARCH_ENABLED", "false").lower() == "true"
         self._gemini_calls = 0
+        self.session_tokens = 0
 
     def generate(self, prompt: str, depth: int, system_instruction: str = "") -> str:
         """Roteador principal: usa exclusivamente o Gemini para economizar tempo e processamento."""
@@ -34,15 +35,16 @@ class HybridLLM:
         # Estimativa grosseira: 1 token ≈ 4 caracteres
         input_tokens = len(input_text) / 4
         output_tokens = len(output_text) / 4
+        
+        self.session_tokens += (input_tokens + output_tokens)
 
         # Preço Gemini 2.5 Flash-Lite: $0.10/1M input, $0.40/1M output
         input_cost = (input_tokens / 1_000_000) * 0.10
         output_cost = (output_tokens / 1_000_000) * 0.40
         total = input_cost + output_cost
 
-        print(f"[Gemini] tokens estimados: {int(input_tokens)} in / {int(output_tokens)} out")
-        print(f"[Gemini] custo estimado: ${total:.6f} USD")
-        print(f"[Gemini] total de chamadas nesta sessão: {self._gemini_calls}")
+        print(f"[Gemini] tokens invocação: {int(input_tokens)}in / {int(output_tokens)}out")
+        print(f"[Gemini] cache cumulativo tokens árvore: {int(self.session_tokens)} | custo sessão: ${total:.6f} USD")
 
     def _call_gemini_with_retry(self, prompt: str, system_instruction: str, max_retries: int = 3) -> str | None:
         import time

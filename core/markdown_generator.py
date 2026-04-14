@@ -11,9 +11,8 @@ class MarkdownGenerator:
 
     @staticmethod
     def _format_list(items, is_link=False):
-        """Montador infalível para a ausência de geração garantindo legibilidade caso o LLM falhe na chave."""
         if not items or not isinstance(items, list) or len(items) == 0:
-            return "- *(Nenhuma informação consolidada fornecida)*"
+            return "- *(Vazio)*"
         
         formatted = []
         for item in items:
@@ -28,56 +27,32 @@ class MarkdownGenerator:
                  formatted.append(f"- {clean_item}")
                  
         if not formatted:
-             return "- *(Nenhuma informação consolidada fornecida)*"
+             return "- *(Vazio)*"
              
         return "\n".join(formatted)
 
     @staticmethod
     def generate(node: dict, depth: int) -> str:
         title = node.get("title", "Untitled")
-        definition = node.get("definition", "Indefinido")
-        level = node.get("level", "intermediate")
-        
-        core_list = MarkdownGenerator._format_list(node.get("core", []), is_link=False)
-        connections_list = MarkdownGenerator._format_list(node.get("connections", []), is_link=True)
+        definition = node.get("definition", "")
+        level = "map-of-content"
         
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        
+        subs = MarkdownGenerator._format_list(node.get("subconcepts", []), is_link=True)
 
         md = f"""---
 tags: [knowledge-engine, {level}]
-type: concept
+type: index
 generated: {now_iso}
 source_depth: {depth}
 ---
 
 # {title}
 
-## 🧩 Definição
-{definition}
+> {definition}
 
-## 🔑 Núcleo
-{core_list}
+## 📚 Roteiro de Estudos (Ramificações)
+{subs}
 """
-        
-        # INJEÇÃO CONDICIONAL DE SEÇÕES COMPLETAS
-        if "mechanism" in node or depth > 1:
-            mechanism_list = MarkdownGenerator._format_list(node.get("mechanism", []))
-            md += f"\n## ⚙️ Funcionamento\n{mechanism_list}\n"
-            
-        if "examples" in node or depth > 1:
-            examples_list = MarkdownGenerator._format_list(node.get("examples", []))
-            md += f"\n## 📊 Exemplos\n{examples_list}\n"
-            
-        if "applications" in node or depth > 1:
-             app_list = MarkdownGenerator._format_list(node.get("applications", []))
-             md += f"\n## 🚀 Aplicações\n{app_list}\n"
-             
-        # REDES HORIZONTAIS
-        md += f"\n## 🔗 Conexões\n{connections_list}\n"
-        
-        # VERTICAIS 
-        if "subconcepts" in node or depth > 1:
-             subs = MarkdownGenerator._format_list(node.get("subconcepts", []), is_link=True)
-             md += f"\n## 🧱 Subconceitos\n{subs}\n"
-             
         return md
