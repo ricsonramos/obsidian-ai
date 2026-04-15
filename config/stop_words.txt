@@ -1,0 +1,30 @@
+# ============================================================
+# ANTIGRAVITY — Stop Words
+# Conceitos que NÃO devem ser decompostos recursivamente.
+# Eles são "axiomas terminais" do grafo de conhecimento.
+# Adicione um conceito por linha (snake_case ou display name).
+# ============================================================
+
+# Matemática Fundamental
+aritmetica
+matematica_basica
+logica_booleana
+logica_proposicional
+notacao_sigma
+teoria_dos_conjuntos
+teoria_dos_numeros
+
+# Linguagem e Lógica
+leitura_e_escrita
+raciocinio_logico
+argumentacao
+
+# Computação Base
+binario
+sistema_de_arquivos
+linha_de_comando
+terminal
+
+# Física / Ciências Base
+fisica_basica
+quimica_basica

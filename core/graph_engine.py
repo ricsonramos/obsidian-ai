@@ -2,17 +2,63 @@ import os
 import json
 import logging
 import re
-from typing import List, Dict
+import unicodedata
+from typing import List
+
+from pydantic import ValidationError
 
 from core.hybrid_llm import HybridLLM
 from core.vault_manager import VaultManager
 from core.markdown_generator import MarkdownGenerator
 from core.linker import Linker
+from core.models import AntigravityResponse, ExpansionNode, MissingPrerequisite
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
+# Caminho padrão para stop words (relativo ao script)
+_DEFAULT_STOP_WORDS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "config", "stop_words.txt"
+)
+
+
+def _load_stop_words(path: str) -> set[str]:
+    """Carrega stop words do arquivo de configuração."""
+    stop_words = set()
+    resolved = os.path.abspath(path)
+    if not os.path.exists(resolved):
+        logging.warning(f"[StopWords] Arquivo não encontrado: {resolved}. Seguindo sem stop words.")
+        return stop_words
+
+    with open(resolved, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                stop_words.add(line.lower())
+
+    logging.info(f"[StopWords] {len(stop_words)} termos carregados de '{resolved}'.")
+    return stop_words
+
+
+def _normalize_slug(title: str) -> str:
+    """Converte título para snake_case ASCII para comparação com stop words."""
+    t = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("utf-8")
+    t = t.lower()
+    # Preserva underscores; remove apenas caracteres não-alfanuméricos exceto espaço e _
+    t = re.sub(r"[^a-z0-9\s_]", "", t)
+    t = re.sub(r"\s+", "_", t).strip("_")
+    # Colapsa múltiplos underscores
+    t = re.sub(r"_+", "_", t)
+    return t
+
+
 class GraphEngine:
-    def __init__(self, dry_run: bool = False, resume: bool = False, target_stage: str = "all", max_tokens_budget: int = 2000):
+    def __init__(
+        self,
+        dry_run: bool = False,
+        resume: bool = False,
+        target_stage: str = "all",
+        max_tokens_budget: int = 2000,
+    ):
         self.dry_run = dry_run
         self.resume = resume
         self.target_stage = str(target_stage).lower()
@@ -23,24 +69,31 @@ class GraphEngine:
         self.llm = HybridLLM()
         self.linker = Linker(vault_path)
 
-        # Controle Estrito Exponencial
-        self.max_nodes_total = int(os.getenv("MAX_NODES_TOTAL", "25"))
+        self.max_nodes_total = int(os.getenv("MAX_NODES_TOTAL", "30"))
         self.total_nodes_generated = 0
-        self.total_children_accumulated = 0
-        self._session_titles = set()
-        
+        self._session_titles: set[str] = set()
+
+        # Carrega stop words do arquivo de config
+        stop_words_path = os.getenv("STOP_WORDS_PATH", _DEFAULT_STOP_WORDS_PATH)
+        self.stop_words = _load_stop_words(stop_words_path)
+
+        # Carrega prompt mestre
         prompt_default = os.path.join(os.path.dirname(__file__), "..", "prompt.txt")
         prompt_path = os.getenv("PROMPT_PATH", prompt_default)
         try:
             with open(prompt_path, "r", encoding="utf-8") as f:
                 self.master_prompt = f.read()
         except FileNotFoundError:
-            self.master_prompt = "Gerador de Sumário Skeleton.\n{json_schema}"
+            self.master_prompt = "Arquiteto Taxonomista Antigravity.\n{title}\n{existing_notes}"
+
+    # ─────────────────────────────────────────────────────────────
+    # Ponto de entrada principal
+    # ─────────────────────────────────────────────────────────────
 
     def run(self, topic: str, target_depth: int):
         self.base_topic = topic
 
-        logging.info(f"Modo Esqueleto (Indexador) | Alvo: '{topic}' | Dep: {target_depth} | Orçamento: {self.max_tokens_budget}")
+        logging.info(f"🧠 Antigravity | Tema: '{topic}' | Profundidade: {target_depth}")
 
         run_stage_1 = self.target_stage in ["all", "1"]
         run_stage_2 = self.target_stage in ["all", "2"]
@@ -48,199 +101,261 @@ class GraphEngine:
         run_stage_4 = self.target_stage in ["all", "4", "link_all"]
         run_stage_5 = self.target_stage in ["all", "5", "link_all"]
 
-        root_nodes = []
+        root_response: AntigravityResponse | None = None
 
         if run_stage_1:
-            logging.info("=== STAGE 1: ANCORAGEM RAIZ ===")
-            root_nodes = self._process_node(topic, generation_depth=1)
-            
-            if not root_nodes:
-                logging.error("Falha na geração taxonômica.")
+            logging.info("=== STAGE 1: ANÁLISE TAXONÔMICA (Arquiteto) ===")
+            root_response = self._call_architect(topic, depth=1)
+
+            if not root_response:
+                logging.error("Falha na chamada ao Arquiteto Taxonomista.")
                 return
 
-            self._save_nodes(root_nodes, 1)
-            self.total_nodes_generated += len(root_nodes)
+            self._process_response(root_response, depth=1)
 
-        if run_stage_2:
-            logging.info("=== STAGE 2: DESDOBRAMENTO EM ÁRVORE ===")
-            if not root_nodes:
-                 return
-                 
-            if target_depth > 1:
-                self._expand_recursive(root_nodes, current_depth=2, max_depth=target_depth)
+        if run_stage_2 and root_response and target_depth > 1:
+            logging.info("=== STAGE 2: EXPANSÃO RECURSIVA ===")
+            ready_nodes = root_response.expansion_nodes
+            self._expand_recursive(ready_nodes, current_depth=2, max_depth=target_depth)
 
-        # Relatorio Final do Orçamento
-        if self.total_nodes_generated > 0:
-             avg_branch = self.total_children_accumulated / self.total_nodes_generated
-        else:
-             avg_branch = 0.0
-             
-        logging.info("=======================================")
-        logging.info("📊 BUDGET & TAXONOMY REPORT")
-        logging.info(f"-> [Índices extraídos] : {self.total_nodes_generated}")
-        logging.info(f"-> [Branch factor]     : {avg_branch:.1f} subtemas por pasta")
-        logging.info(f"-> [Tokens Consumidos] : ~{int(self.llm.session_tokens)} / {self.max_tokens_budget} Limit")
-        logging.info("=======================================")
+        # Relatório final
+        self._print_report()
 
         if run_stage_3:
-            logging.info("=== STAGE 3: LINK ===")
+            logging.info("=== STAGE 3: LINK (wikilinks) ===")
             if not self.dry_run:
                 self.linker.run()
-                
+
         if run_stage_4:
             logging.info("=== STAGE 4: ACTIVE CROSS-LINK ===")
             if not self.dry_run:
                 self.linker.cross_link_vault()
-                
+
         if run_stage_5:
             logging.info("=== STAGE 5: SEMANTIC VECTOR BRIDGE ===")
             if not self.dry_run:
                 self.linker.semantic_link_vault(self.llm)
-                 
-    def _rank_nodes(self, nodes: List[Dict], limit: int) -> List[Dict]:
-        """Num fluxo puro de esqueleto, a relevância repousa em quantos braços válidos a árvore apresentou."""
-        for n in nodes:
-            score = len(n.get("subconcepts", [])) * 2
-            n["_importance_score"] = score
-            
-        return sorted(nodes, key=lambda x: x.get("_importance_score", 0), reverse=True)[:limit]
 
-    def _get_depth_decay_limit(self, current_depth: int) -> int:
-        decay_str = os.getenv("DEPTH_DECAY_LIMITS", "5,3,2")
+    # ─────────────────────────────────────────────────────────────
+    # Gap Logic + Processamento da resposta do Arquiteto
+    # ─────────────────────────────────────────────────────────────
+
+    def _process_response(self, response: AntigravityResponse, depth: int):
+        """
+        Implementa a Gap Logic:
+          1. Se status == 'missing_prerequisites', cria os stubs L0 PRIMEIRO.
+          2. Depois cria os expansion_nodes normais.
+        """
+        status = response.subject_info.status
+        level = response.subject_info.level
+
+        if status == "missing_prerequisites" and response.missing_prerequisites:
+            logging.info(f"  ⚠️  Pré-requisitos faltantes detectados — criando notas L0 primeiro...")
+            for prereq in response.missing_prerequisites:
+                self._create_prerequisite_note(prereq, depth)
+
+        for node in response.expansion_nodes:
+            self._create_expansion_note(node, level=level, depth=depth)
+
+    def _create_prerequisite_note(self, prereq: MissingPrerequisite, depth: int):
+        """Cria nota stub para pré-requisito faltante (Nível 0 / Foundation)."""
+        slug = _normalize_slug(prereq.name)
+
+        if self._is_stop_word(slug):
+            logging.info(f"  [STOP] '{prereq.name}' é stop word — não decomponho mais.")
+            return
+
+        if self._already_exists(prereq.name):
+            logging.info(f"  [SKIP] Pré-requisito já existe: '{prereq.name}'")
+            return
+
+        logging.info(f"  [L0] Criando pré-requisito: {prereq.name}")
+        filename = MarkdownGenerator.normalize_filename(prereq.name)
+        content = MarkdownGenerator.generate_prerequisite_stub(prereq.model_dump(), depth=depth)
+
+        self._mark_visited(prereq.name)
+
+        if not self.dry_run:
+            self.vault.save_node(filename, content, subfolder=self.base_topic)
+            logging.info(f"     [+] {filename}")
+        else:
+            logging.info(f"     [DRY-RUN] {filename}")
+
+        self.total_nodes_generated += 1
+
+    def _create_expansion_note(self, node: ExpansionNode, level: str, depth: int):
+        """Cria nota de expansão para um conceito mapeado."""
+        if self._already_exists(node.display_name) or self._already_exists(node.filename):
+            logging.info(f"  [SKIP] Já existe: '{node.display_name}'")
+            return
+
+        if self.total_nodes_generated >= self.max_nodes_total:
+            logging.warning("[BUDGET] Limite de nós atingido — abortando expansão.")
+            return
+
+        logging.info(f"  [NODE] {node.display_name} ({level})")
+        filename = node.filename + ".md" if not node.filename.endswith(".md") else node.filename
+        content = MarkdownGenerator.generate_from_expansion_node(
+            node.model_dump(), level=level, depth=depth
+        )
+
+        self._mark_visited(node.display_name)
+        self._mark_visited(node.filename)
+
+        if not self.dry_run:
+            self.vault.save_node(filename, content, subfolder=self.base_topic)
+            logging.info(f"     [+] {filename}")
+        else:
+            logging.info(f"     [DRY-RUN] {filename}")
+
+        self.total_nodes_generated += 1
+
+    # ─────────────────────────────────────────────────────────────
+    # Chamada ao LLM (Prompt Mestre)
+    # ─────────────────────────────────────────────────────────────
+
+    def _call_architect(self, title: str, depth: int) -> AntigravityResponse | None:
+        """Chama o LLM com o Prompt Mestre e valida via Pydantic."""
+        existing_notes = self.vault.get_existing_notes()
+        existing_str = json.dumps(existing_notes, ensure_ascii=False)
+
+        prompt = (
+            self.master_prompt
+            .replace("{title}", title)
+            .replace("{existing_notes}", existing_str)
+        )
+
+        raw = self.llm.generate(prompt, depth=depth)
+        if not raw:
+            logging.error(f"LLM retornou vazio para '{title}'.")
+            return None
+
+        return self._parse_response(raw, title)
+
+    def _parse_response(self, raw: str, title: str) -> AntigravityResponse | None:
+        """Parseia e valida a resposta JSON do LLM com Pydantic."""
         try:
-             limits = [int(x.strip()) for x in decay_str.split(',')]
-        except ValueError:
-             limits = [5, 3, 2]
-             
-        if current_depth == 1:
-            return limits[0] if len(limits) > 0 else 5
-        elif current_depth == 2:
-            return limits[1] if len(limits) > 1 else 3
-        elif current_depth >= 3:
-            return limits[2] if len(limits) > 2 else 2
-        return 0
-        
-    def _check_budget(self) -> bool:
-        if self.llm.session_tokens >= self.max_tokens_budget:
-             return False
-        return True
-        
-    def _expand_recursive(self, parent_nodes: List[Dict], current_depth: int, max_depth: int):
-        if current_depth > max_depth or self.total_nodes_generated >= self.max_nodes_total:
-             return
-             
-        if not self._check_budget():
-             logging.warning(f"🛑 Expansão barrada! Orçamento esgotado.")
-             return
-             
-        # Limita pros top ramos 
-        rank_limit = int(os.getenv("RANK_NODES_LIMIT", "5"))
-        parents_ranked = self._rank_nodes(parent_nodes, limit=rank_limit)
-        max_branching_rate = self._get_depth_decay_limit(current_depth)
-        
-        queue_subconcepts = []
-        for p in parents_ranked:
-             subs = p.get("subconcepts", [])
-             queue_subconcepts.extend(subs)
-
-        queue_subconcepts = queue_subconcepts[:max_branching_rate]
-        
-        if not queue_subconcepts:
-             return
-             
-        self.total_children_accumulated += len(queue_subconcepts)
-        new_layer_nodes = []
-        
-        for sub_topic in queue_subconcepts:
-            if self.total_nodes_generated >= self.max_nodes_total:
-                break
-                
-            if not self._check_budget():
-                 break
-                
-            if self._already_exists(sub_topic):
-                continue
-                
-            logging.info(f"-> Indexando folha [L{current_depth}]: {sub_topic}")
-            subs_nodes = self._process_node(sub_topic, current_depth)
-            
-            if subs_nodes:
-                self._save_nodes(subs_nodes, current_depth)
-                self.total_nodes_generated += len(subs_nodes)
-                new_layer_nodes.extend(subs_nodes)
-                
-        if new_layer_nodes:
-             self._expand_recursive(new_layer_nodes, current_depth + 1, max_depth)
-
-    def _already_exists(self, title: str) -> bool:
-        normalized = title.lower().strip()
-        if normalized in self._session_titles:
-             return True
-        if self.vault.has_visited(title):
-             return True
-        return False
-
-    def _save_nodes(self, nodes: List[Dict], depth: int):
-        for node in nodes:
-            self._session_titles.add(node.get("title", "").lower().strip())
-            self.vault.add_visited(node.get("title", ""))
-            
-            if not self.dry_run:
-                md_text = MarkdownGenerator.generate(node, depth)
-                filename = MarkdownGenerator.normalize_filename(node.get("title", "Untitled"))
-                filepath = self.vault.save_node(filename, md_text, subfolder=self.base_topic)
-                logging.info(f"     [+] Mapa gerado: {filename}")
-            else:
-                logging.info(f"     [DRY-RUN] Roteirizado: {node.get('title', '')}")
-
-    def _process_node(self, topic: str, generation_depth: int) -> List[Dict]:
-        schema_skeleton = '''{
-  "nodes": [
-    {
-      "title": "string",
-      "definition": "1 frase crua (o que é estritamente)",
-      "subconcepts": ["sub-area pertinente 1", "sub-area pertinente 2", "etc"]
-    }
-  ]
-}'''
-        prompt = self.master_prompt.replace("{title}", topic).replace("{depth}", str(generation_depth)).replace("{json_schema}", schema_skeleton)
-        resp = self.llm.generate(prompt, depth=1)
-        data = self._extract_json(resp)
-        
-        raw_nodes = data.get("nodes", [])
-        
-        # Num mapeador raiz, o teto de 5 indices de arvore direta é satisfatório
-        raw_nodes = raw_nodes[:5]
-        
-        valid_nodes = []
-        for n in raw_nodes:
-            title = n.get("title", "")
-            if not title:
-                continue
-            valid_nodes.append(n)
-            
-        return valid_nodes
-
-    def _extract_json(self, response: str) -> dict:
-        if not response or not response.strip():
-            return {}
-        try:
-            clean = re.sub(r"```json\s*", "", response)
-            clean = re.sub(r"```\s*$", "", clean)
-            
+            # Limpa eventuais wrappers de markdown mesmo com response_mime_type
+            clean = re.sub(r"```json\s*", "", raw)
+            clean = re.sub(r"```\s*$", "", clean, flags=re.MULTILINE)
             start = clean.find("{")
             end = clean.rfind("}")
             if start != -1 and end != -1:
-                clean = clean[start:end+1]
-            return json.loads(clean)
-        except json.JSONDecodeError:
-            logging.warning("JSON reparo fallback (Map Mode)...")
-            repair = self.llm.generate(f"{response}", depth=1, system_instruction="Fix into valid rigid JSON schema with no markdown.")
+                clean = clean[start:end + 1]
+
+            data = json.loads(clean)
+            return AntigravityResponse.model_validate(data)
+
+        except (json.JSONDecodeError, ValidationError) as e:
+            logging.warning(f"[Parser] Falha ao validar resposta para '{title}': {e}")
+
+            # Tentativa de reparo via LLM
+            logging.info("[Parser] Tentando reparo via LLM...")
+            repair = self.llm.generate(
+                raw,
+                depth=1,
+                system_instruction=(
+                    "Fix the following into a valid JSON object matching this schema exactly, "
+                    "no markdown, no extra text:\n"
+                    '{"subject_info":{"title":"...","level":"0_Foundation|1_Core|2_Advanced",'
+                    '"status":"missing_prerequisites|ready_to_expand"},'
+                    '"missing_prerequisites":[{"name":"...","reason":"...","priority":"high"}],'
+                    '"expansion_nodes":[{"filename":"snake_case","display_name":"...","brief_definition":"...",'
+                    '"search_queries":["...","..."],"connections":[]}]}'
+                ),
+            )
             try:
                 r_start = repair.find("{")
                 r_end = repair.rfind("}")
                 if r_start != -1 and r_end != -1:
-                     repair = repair[r_start:r_end+1]
-                return json.loads(repair)
+                    repair = repair[r_start:r_end + 1]
+                data = json.loads(repair)
+                return AntigravityResponse.model_validate(data)
             except Exception:
-                return {}
+                logging.error(f"[Parser] Reparo falhou para '{title}'. Pulando nó.")
+                return None
+
+    # ─────────────────────────────────────────────────────────────
+    # Expansão recursiva
+    # ─────────────────────────────────────────────────────────────
+
+    def _expand_recursive(self, nodes: List[ExpansionNode], current_depth: int, max_depth: int):
+        if current_depth > max_depth:
+            return
+
+        if self.total_nodes_generated >= self.max_nodes_total:
+            logging.warning("[BUDGET] Limite de nós atingido — abortando recursão.")
+            return
+
+        if not self._check_budget():
+            logging.warning("🛑 Orçamento de tokens esgotado — abortando recursão.")
+            return
+
+        limit = self._get_depth_decay_limit(current_depth)
+        nodes_to_expand = nodes[:limit]
+
+        next_layer: List[ExpansionNode] = []
+
+        for node in nodes_to_expand:
+            if self._is_stop_word(_normalize_slug(node.display_name)):
+                logging.info(f"  [STOP] '{node.display_name}' é stop word — não decompõe mais.")
+                continue
+
+            if self.total_nodes_generated >= self.max_nodes_total:
+                break
+
+            logging.info(f"  → Expandindo [L{current_depth}]: {node.display_name}")
+            child_response = self._call_architect(node.display_name, depth=current_depth)
+
+            if child_response:
+                self._process_response(child_response, depth=current_depth)
+                next_layer.extend(child_response.expansion_nodes)
+
+        if next_layer:
+            self._expand_recursive(next_layer, current_depth + 1, max_depth)
+
+    # ─────────────────────────────────────────────────────────────
+    # Helpers
+    # ─────────────────────────────────────────────────────────────
+
+    def _is_stop_word(self, slug: str) -> bool:
+        return slug in self.stop_words
+
+    def _already_exists(self, title: str) -> bool:
+        normalized = title.lower().strip()
+        slug = _normalize_slug(title)
+        return (
+            normalized in self._session_titles
+            or slug in self._session_titles
+            or self.vault.has_visited(title)
+        )
+
+    def _mark_visited(self, title: str):
+        self._session_titles.add(title.lower().strip())
+        self._session_titles.add(_normalize_slug(title))
+        self.vault.add_visited(title)
+
+    def _check_budget(self) -> bool:
+        return self.llm.session_tokens < self.max_tokens_budget
+
+    def _get_depth_decay_limit(self, current_depth: int) -> int:
+        decay_str = os.getenv("DEPTH_DECAY_LIMITS", "5,3,2")
+        try:
+            limits = [int(x.strip()) for x in decay_str.split(",")]
+        except ValueError:
+            limits = [5, 3, 2]
+
+        if current_depth == 1:
+            return limits[0] if limits else 5
+        elif current_depth == 2:
+            return limits[1] if len(limits) > 1 else 3
+        else:
+            return limits[2] if len(limits) > 2 else 2
+
+    def _print_report(self):
+        logging.info("═══════════════════════════════════════")
+        logging.info("📊 ANTIGRAVITY — RELATÓRIO DA SESSÃO")
+        logging.info(f"  → Nós gerados       : {self.total_nodes_generated}")
+        logging.info(f"  → Tokens consumidos : ~{int(self.llm.session_tokens)} / {self.max_tokens_budget}")
+        logging.info(f"  → Chamadas ao LLM   : {self.llm._gemini_calls}")
+        logging.info("═══════════════════════════════════════")
