@@ -1,34 +1,43 @@
 import os
 import glob
 import re
+from core.utils import normalize_title
 
 class Linker:
     def __init__(self, vault_path: str):
         self.vault_path = os.path.abspath(vault_path)
 
-    def _get_all_titles(self) -> set:
-        """Obtém todos os títulos validos e indexados fisicamente no vault."""
-        titles = set()
+    def _get_all_titles_mapped(self) -> dict:
+        """
+        Retorna dicionário {titulo_normalizado: titulo_original}.
+        O titulo_original é preferencialmente o H1 (# Title) ou o nome do arquivo.
+        """
+        mapped = {}
         md_files = glob.glob(os.path.join(self.vault_path, "**", "*.md"), recursive=True)
         for file_path in md_files:
             try:
+                # 1. Tenta extrair H1
                 with open(file_path, "r", encoding="utf-8") as f:
-                    match = re.search(r"^#\s+(.+)$", f.read(), re.MULTILINE)
+                    content = f.read()
+                    match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
                     if match:
-                        titles.add(match.group(1).strip().lower())
+                        original_title = match.group(1).strip()
+                        mapped[normalize_title(original_title)] = original_title
+                
+                # 2. Também mapeia pelo nome do arquivo (como fallback ou redundância)
+                base = os.path.basename(file_path)
+                name = os.path.splitext(base)[0].replace("_", " ")
+                norm_name = normalize_title(name)
+                if norm_name not in mapped:
+                    mapped[norm_name] = name
             except Exception:
                 pass
-        return titles
+        return mapped
 
     def run(self):
-        """
-        Validador de grafos final. O Markdown Generator (através da orientação da engine) já
-        converteu conexões sugeridas no JSON e adicionou [[links]] nos bullets certos.
-        O Linker foi rebaixado para atuar passivamente evitando poluição transversal:
-        Monitorando o surgimento de links fantasmas/projetados para auditoria na tela do motor de observabilidade.
-        """
-        titles = self._get_all_titles()
-        if not titles:
+        """Monitora e audita links baseados no mapeamento normalizado."""
+        title_map = self._get_all_titles_mapped()
+        if not title_map:
             return
 
         dead_links_detected = 0
@@ -39,11 +48,11 @@ class Linker:
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
 
-                # Conta dead-links que ainda estão pendentes
+                # Busca wikilinks: [[link]]
                 links = re.findall(r"\[\[(.*?)\]\]", content)
                 for link in links:
-                     clean_link = link.lower().strip()
-                     if clean_link not in titles:
+                     # Se não existe o título original ou o normalizado no mapa
+                     if normalize_title(link) not in title_map:
                           dead_links_detected += 1
                           
             except Exception:
@@ -55,12 +64,13 @@ class Linker:
              print("[AutoLinker | Auditor] O tecido criado é autossuficiente (Sem links fantasmas/pendentes).")
 
     def cross_link_vault(self):
-        """Varre os arquivos .md e insere wikilinks baseados em regex para conceitos existentes."""
-        titles = self._get_all_titles()
-        if not titles:
+        """Varre arquivos e insere wikilinks baseados em títulos existentes (accent-safe)."""
+        title_map = self._get_all_titles_mapped()
+        if not title_map:
              return
              
-        sorted_titles = sorted(list(titles), key=len, reverse=True)
+        # Ordena títulos normalizados por tamanho (maior primeiro) para evitar recursão parcial
+        sorted_normalized = sorted(list(title_map.keys()), key=len, reverse=True)
         
         md_files = glob.glob(os.path.join(self.vault_path, "**", "*.md"), recursive=True)
         files_modified = 0
@@ -71,12 +81,17 @@ class Linker:
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
 
+                if len(content) < 10: continue
+
+                # Identifica limites para não mexer no frontmatter nem nas seções de rodapé
                 yaml_end_idx = 0
                 match_yaml = re.search(r"^---\n.*?\n---\n", content, re.DOTALL | re.MULTILINE)
                 if match_yaml:
                      yaml_end_idx = match_yaml.end()
                      
-                relations_idx = content.find("## 🔗 Relações")
+                relations_idx = content.find("## Relacoes")
+                if relations_idx == -1:
+                     relations_idx = content.find("## Conexoes")
                 if relations_idx == -1:
                      relations_idx = len(content)
                      
@@ -85,22 +100,24 @@ class Linker:
                 footer_part = content[relations_idx:]
                 
                 original_body = body_part
-                file_name_clean = os.path.basename(file_path).replace(".md", "").replace("_", " ").lower()
+                current_file_norm = normalize_title(os.path.basename(file_path).replace(".md", "").replace("_", " "))
                 
-                for t in sorted_titles:
-                     if t == file_name_clean:
-                         continue
-                         
-                     safe_t = re.escape(t)
-                     # Regex ignorará matches precedidos diretamente por [ ou seguidos diretamente por ] (já estão em wikilinks)
-                     # Adicionalmente garantindo word boundary para não engolir fragmentos de outras palavras
+                for norm_t in sorted_normalized:
+                     if norm_t == current_file_norm: continue
+                     # Não linka termos muito curtos (ruído)
+                     if len(norm_t) < 3: continue
+                     
+                     original_t = title_map[norm_t]
+                     safe_t = re.escape(original_t)
+                     
+                     # Regex: word boundary, ignora se já estiver dentro de [[...]] ou [...]
                      pattern = re.compile(rf"(?<!\[)(?<!\[\[)\b({safe_t})\b(?!\]\])(?!\])", re.IGNORECASE)
                      
                      def repl(m):
-                         nonlocal total_links_created
-                         total_links_created += 1
-                         return f"[[{m.group(1)}]]"
-                         
+                          nonlocal total_links_created
+                          total_links_created += 1
+                          return f"[[{original_t}]]"
+                          
                      body_part = pattern.sub(repl, body_part)
                 
                 if body_part != original_body:
@@ -112,12 +129,11 @@ class Linker:
                 print(f"[AutoLinker] Erro formatando {file_path}: {e}")
                 
         print(f"[AutoLinker | Ativo] Cross-linking concluído em {files_modified} documentos.")
-        print(f"[AutoLinker | Ativo] Criados {total_links_created} novos backlinks orgânicos através de pattern-matching local.")
+        print(f"[AutoLinker | Ativo] Criados {total_links_created} novos backlinks orgânicos.")
 
     def semantic_link_vault(self, llm):
-        """Varre os arquivos, vetoriza via LLM Embeddings + Cache, e liga arquivos semanticamente próximos (Stage 5)."""
+        """Varre os arquivos, vetoriza e liga arquivos semanticamente próximos (Stage 5)."""
         import json
-        import math
         
         md_files = glob.glob(os.path.join(self.vault_path, "**", "*.md"), recursive=True)
         cache_path = os.path.join(self.vault_path, ".embeddings_cache.json")
@@ -132,6 +148,7 @@ class Linker:
                  
         embeddings_db = {}
         files_embedded_now = 0
+        title_map = self._get_all_titles_mapped()
         
         print("[SemanticLinker] Carregando e mapeando vetores textuais profundos...")
         
@@ -158,7 +175,7 @@ class Linker:
                           "content": content
                       }
                  else:
-                      print(f"[SemanticLinker] Vetorizando arquivo inédito/modificado: {file_name_clean}")
+                      print(f"[SemanticLinker] Vetorizando: {file_name_clean}")
                       vector = llm.get_embedding(body)
                       if vector:
                            embeddings_db[abs_path] = {
@@ -172,7 +189,7 @@ class Linker:
                            }
                            files_embedded_now += 1
              except Exception as e:
-                 print(f"[SemanticLinker] Falha de extração vetorial em {file_path}: {e}")
+                 print(f"[SemanticLinker] Falha em {file_path}: {e}")
                  
         if files_embedded_now > 0:
              try:
@@ -190,11 +207,9 @@ class Linker:
              return dot / (norm1 * norm2)
              
         threshold = float(os.getenv("SEMANTIC_THRESHOLD", "0.82"))
-        
         file_paths = list(embeddings_db.keys())
         total_semantic_links = 0
         files_modified = set()
-        
         memory_content = { p: embeddings_db[p]["content"] for p in file_paths }
         
         for i in range(len(file_paths)):
@@ -202,32 +217,36 @@ class Linker:
                   path_a = file_paths[i]
                   path_b = file_paths[j]
                   
-                  vec_a = embeddings_db[path_a]["embedding"]
-                  vec_b = embeddings_db[path_b]["embedding"]
-                  
-                  sim = cosine_sim(vec_a, vec_b)
+                  sim = cosine_sim(embeddings_db[path_a]["embedding"], embeddings_db[path_b]["embedding"])
                   if sim >= threshold:
-                       title_a = embeddings_db[path_a]["title"].title()
-                       title_b = embeddings_db[path_b]["title"].title()
-                       
-                       content_a = memory_content[path_a]
-                       link_b = f"[[{title_b}]]"
-                       if link_b.lower() not in content_a.lower():
-                            if "## 🔗 Relações" in content_a:
+                        norm_a = normalize_title(embeddings_db[path_a]["title"])
+                        norm_b = normalize_title(embeddings_db[path_b]["title"])
+                        
+                        title_a = title_map.get(norm_a, embeddings_db[path_a]["title"])
+                        title_b = title_map.get(norm_b, embeddings_db[path_b]["title"])
+                        
+                        content_a = memory_content[path_a]
+                        link_b = f"[[{title_b}]]"
+                        if normalize_title(link_b) not in normalize_title(content_a):
+                            if "## Relacoes" in content_a:
+                                content_a += f"\n- {link_b}  <!-- Sim: {sim*100:.1f}% -->"
+                            elif "## Conexoes" in content_a:
                                 content_a += f"\n- {link_b}  <!-- Sim: {sim*100:.1f}% -->"
                             else:
-                                content_a += f"\n\n## 🔗 Relações\n- {link_b}  <!-- Sim: {sim*100:.1f}% -->"
+                                content_a += f"\n\n## Relacoes\n- {link_b}  <!-- Sim: {sim*100:.1f}% -->"
                             memory_content[path_a] = content_a
                             files_modified.add(path_a)
                             total_semantic_links += 1
                             
-                       content_b = memory_content[path_b]
-                       link_a = f"[[{title_a}]]"
-                       if link_a.lower() not in content_b.lower():
-                            if "## 🔗 Relações" in content_b:
+                        content_b = memory_content[path_b]
+                        link_a = f"[[{title_a}]]"
+                        if normalize_title(link_a) not in normalize_title(content_b):
+                            if "## Relacoes" in content_b:
+                                content_b += f"\n- {link_a}  <!-- Sim: {sim*100:.1f}% -->"
+                            elif "## Conexoes" in content_b:
                                 content_b += f"\n- {link_a}  <!-- Sim: {sim*100:.1f}% -->"
                             else:
-                                content_b += f"\n\n## 🔗 Relações\n- {link_a}  <!-- Sim: {sim*100:.1f}% -->"
+                                content_b += f"\n\n## Relacoes\n- {link_a}  <!-- Sim: {sim*100:.1f}% -->"
                             memory_content[path_b] = content_b
                             files_modified.add(path_b)
                             total_semantic_links += 1

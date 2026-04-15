@@ -15,11 +15,12 @@ from core.models import AntigravityResponse, ExpansionNode, MissingPrerequisite
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
+from core.utils import normalize_title
+
 # Caminho padrão para stop words (relativo ao script)
 _DEFAULT_STOP_WORDS_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "config", "stop_words.txt"
 )
-
 
 def _load_stop_words(path: str) -> set[str]:
     """Carrega stop words do arquivo de configuração."""
@@ -33,22 +34,11 @@ def _load_stop_words(path: str) -> set[str]:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
-                stop_words.add(line.lower())
+                # Normaliza a stop word para garantir match
+                stop_words.add(normalize_title(line))
 
     logging.info(f"[StopWords] {len(stop_words)} termos carregados de '{resolved}'.")
     return stop_words
-
-
-def _normalize_slug(title: str) -> str:
-    """Converte título para snake_case ASCII para comparação com stop words."""
-    t = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("utf-8")
-    t = t.lower()
-    # Preserva underscores; remove apenas caracteres não-alfanuméricos exceto espaço e _
-    t = re.sub(r"[^a-z0-9\s_]", "", t)
-    t = re.sub(r"\s+", "_", t).strip("_")
-    # Colapsa múltiplos underscores
-    t = re.sub(r"_+", "_", t)
-    return t
 
 
 class GraphEngine:
@@ -143,25 +133,52 @@ class GraphEngine:
     def _process_response(self, response: AntigravityResponse, depth: int):
         """
         Implementa a Gap Logic:
-          1. Se status == 'missing_prerequisites', cria os stubs L0 PRIMEIRO.
-          2. Depois cria os expansion_nodes normais.
+          1. Se status == 'missing_prerequisites', cria PRIMEIRO a nota raiz do tópico
+             (que age como hub), listando todos os pré-requisitos como links.
+          2. Cria os stubs L0 (com backlink para o hub).
+          3. Cria os expansion_nodes normais.
         """
         status = response.subject_info.status
         level = response.subject_info.level
+        topic_title = response.subject_info.title or self.base_topic
 
         if status == "missing_prerequisites" and response.missing_prerequisites:
-            logging.info(f"  ⚠️  Pré-requisitos faltantes detectados — criando notas L0 primeiro...")
+            logging.info(f"  ⚠️  Pré-requisitos faltantes detectados — criando nota raiz e stubs L0...")
+
+            # Cria a nota raiz do tópico (o HUB do grafo)
+            prereq_links = [f"[[{p.name}]]" for p in response.missing_prerequisites]
+            self._create_root_hub_note(topic_title, level, prereq_links, depth)
+
+            # Cria as notas L0 com backlink para o tópico raiz
             for prereq in response.missing_prerequisites:
-                self._create_prerequisite_note(prereq, depth)
+                self._create_prerequisite_note(prereq, depth, parent_topic=topic_title)
 
         for node in response.expansion_nodes:
             self._create_expansion_note(node, level=level, depth=depth)
 
-    def _create_prerequisite_note(self, prereq: MissingPrerequisite, depth: int):
-        """Cria nota stub para pré-requisito faltante (Nível 0 / Foundation)."""
-        slug = _normalize_slug(prereq.name)
+    def _create_root_hub_note(self, topic_title: str, level: str, prereq_links: list, depth: int):
+        """Cria a nota MOC (hub) para o tópico raiz, conectando-o aos pré-requisitos."""
+        if self._already_exists(topic_title):
+            return
 
-        if self._is_stop_word(slug):
+        filename = MarkdownGenerator.normalize_filename(topic_title)
+        content = MarkdownGenerator.generate_hub_note(topic_title, level, prereq_links, depth)
+
+        self._mark_visited(topic_title)
+
+        if not self.dry_run:
+            self.vault.save_node(filename, content, subfolder=self.base_topic)
+            logging.info(f"  [HUB] {filename} (raiz com {len(prereq_links)} pré-requisitos)")
+        else:
+            logging.info(f"  [DRY-HUB] {filename}")
+
+        self.total_nodes_generated += 1
+
+    def _create_prerequisite_note(self, prereq: MissingPrerequisite, depth: int, parent_topic: str = ""):
+        """Cria nota stub para pré-requisito faltante (Nível 0 / Foundation)."""
+        normalized_name = normalize_title(prereq.name)
+
+        if self._is_stop_word(normalized_name):
             logging.info(f"  [STOP] '{prereq.name}' é stop word — não decomponho mais.")
             return
 
@@ -171,7 +188,9 @@ class GraphEngine:
 
         logging.info(f"  [L0] Criando pré-requisito: {prereq.name}")
         filename = MarkdownGenerator.normalize_filename(prereq.name)
-        content = MarkdownGenerator.generate_prerequisite_stub(prereq.model_dump(), depth=depth)
+        content = MarkdownGenerator.generate_prerequisite_stub(
+            prereq.model_dump(), depth=depth, parent_topic=parent_topic
+        )
 
         self._mark_visited(prereq.name)
 
@@ -297,7 +316,7 @@ class GraphEngine:
         next_layer: List[ExpansionNode] = []
 
         for node in nodes_to_expand:
-            if self._is_stop_word(_normalize_slug(node.display_name)):
+            if self._is_stop_word(normalize_title(node.display_name)):
                 logging.info(f"  [STOP] '{node.display_name}' é stop word — não decompõe mais.")
                 continue
 
@@ -318,21 +337,19 @@ class GraphEngine:
     # Helpers
     # ─────────────────────────────────────────────────────────────
 
-    def _is_stop_word(self, slug: str) -> bool:
-        return slug in self.stop_words
+    def _is_stop_word(self, normalized_title: str) -> bool:
+        return normalized_title in self.stop_words
 
     def _already_exists(self, title: str) -> bool:
-        normalized = title.lower().strip()
-        slug = _normalize_slug(title)
+        normalized = normalize_title(title)
         return (
             normalized in self._session_titles
-            or slug in self._session_titles
             or self.vault.has_visited(title)
         )
 
     def _mark_visited(self, title: str):
-        self._session_titles.add(title.lower().strip())
-        self._session_titles.add(_normalize_slug(title))
+        normalized = normalize_title(title)
+        self._session_titles.add(normalized)
         self.vault.add_visited(title)
 
     def _check_budget(self) -> bool:
