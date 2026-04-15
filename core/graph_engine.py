@@ -11,7 +11,7 @@ from core.hybrid_llm import HybridLLM
 from core.vault_manager import VaultManager
 from core.markdown_generator import MarkdownGenerator
 from core.linker import Linker
-from core.models import AntigravityResponse, ExpansionNode, MissingPrerequisite
+from core.models import AntigravityResponse, NewNode
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
@@ -105,7 +105,7 @@ class GraphEngine:
 
         if run_stage_2 and root_response and target_depth > 1:
             logging.info("=== STAGE 2: EXPANSÃO RECURSIVA ===")
-            ready_nodes = root_response.expansion_nodes
+            ready_nodes = root_response.new_nodes
             self._expand_recursive(ready_nodes, current_depth=2, max_depth=target_depth)
 
         # Relatório final
@@ -132,29 +132,32 @@ class GraphEngine:
 
     def _process_response(self, response: AntigravityResponse, depth: int):
         """
-        Implementa a Gap Logic:
-          1. Se status == 'missing_prerequisites', cria PRIMEIRO a nota raiz do tópico
-             (que age como hub), listando todos os pré-requisitos como links.
-          2. Cria os stubs L0 (com backlink para o hub).
-          3. Cria os expansion_nodes normais.
+        Processa a resposta do Arquiteto v2 (schema new_nodes).
+        - FOUNDATION_FIRST (level 0): cria hub + stubs L0 com backlinks.
+        - EXPANSION (level 1+): cria notas de expansao normais.
         """
-        status = response.subject_info.status
-        level = response.subject_info.level
-        topic_title = response.subject_info.title or self.base_topic
+        ic = response.integrity_check
+        nodes = response.new_nodes
 
-        if status == "missing_prerequisites" and response.missing_prerequisites:
-            logging.info(f"  ⚠️  Pré-requisitos faltantes detectados — criando nota raiz e stubs L0...")
+        if ic.detected_redundancies:
+            logging.info(f"  [MECE] Redundancias detectadas: {ic.detected_redundancies}")
+        if ic.missing_foundations:
+            logging.info(f"  [GAP] Fundamentos ausentes: {ic.missing_foundations}")
 
-            # Cria a nota raiz do tópico (o HUB do grafo)
-            prereq_links = [f"[[{p.name}]]" for p in response.missing_prerequisites]
-            self._create_root_hub_note(topic_title, level, prereq_links, depth)
+        foundation_nodes = [n for n in nodes if n.level == 0]
+        expansion_nodes  = [n for n in nodes if n.level > 0]
 
-            # Cria as notas L0 com backlink para o tópico raiz
-            for prereq in response.missing_prerequisites:
-                self._create_prerequisite_note(prereq, depth, parent_topic=topic_title)
+        # Cria nota HUB do topico raiz se houver fundamentos
+        if foundation_nodes and ic.action_priority == "FOUNDATION_FIRST":
+            logging.info(f"  [GAP] FOUNDATION_FIRST — criando hub + {len(foundation_nodes)} nos L0...")
+            prereq_links = [f"[[{n.display_name}]]" for n in foundation_nodes]
+            self._create_root_hub_note(self.base_topic, "1_Core", prereq_links, depth)
 
-        for node in response.expansion_nodes:
-            self._create_expansion_note(node, level=level, depth=depth)
+            for node in foundation_nodes:
+                self._create_new_node(node, depth, parent_topic=self.base_topic)
+        else:
+            for node in nodes:
+                self._create_new_node(node, depth)
 
     def _create_root_hub_note(self, topic_title: str, level: str, prereq_links: list, depth: int):
         """Cria a nota MOC (hub) para o tópico raiz, conectando-o aos pré-requisitos."""
@@ -202,21 +205,43 @@ class GraphEngine:
 
         self.total_nodes_generated += 1
 
-    def _create_expansion_note(self, node: ExpansionNode, level: str, depth: int):
-        """Cria nota de expansão para um conceito mapeado."""
+    def _create_new_node(self, node: NewNode, depth: int, parent_topic: str = ""):
+        """Cria nota a partir de um NewNode (schema v2)."""
         if self._already_exists(node.display_name) or self._already_exists(node.filename):
-            logging.info(f"  [SKIP] Já existe: '{node.display_name}'")
+            logging.info(f"  [SKIP] Ja existe: '{node.display_name}'")
+            return
+
+        if node.filename and self._is_stop_word(normalize_title(node.filename)):
+            logging.info(f"  [STOP] '{node.display_name}' e stop word.")
             return
 
         if self.total_nodes_generated >= self.max_nodes_total:
-            logging.warning("[BUDGET] Limite de nós atingido — abortando expansão.")
+            logging.warning("[BUDGET] Limite de nos atingido.")
             return
 
-        logging.info(f"  [NODE] {node.display_name} ({level})")
+        level_str = ["0_Foundation", "1_Core", "2_Advanced"][min(node.level, 2)]
+        logging.info(f"  [NODE] {node.display_name} ({level_str})")
+
+        node_dict = node.model_dump()
+        # Injeta parent_topic como conexao se fornecido e ainda nao presente
+        if parent_topic:
+            parent_link = f"[[{parent_topic}]]"
+            if parent_link not in node_dict.get("connections", []):
+                node_dict.setdefault("connections", []).insert(0, parent_link)
+            node_dict["parent"] = parent_topic
+
         filename = node.filename + ".md" if not node.filename.endswith(".md") else node.filename
-        content = MarkdownGenerator.generate_from_expansion_node(
-            node.model_dump(), level=level, depth=depth
-        )
+
+        if node.level == 0:
+            content = MarkdownGenerator.generate_prerequisite_stub(
+                {"name": node.display_name, "reason": node.brief_definition, "priority": "high"},
+                depth=depth,
+                parent_topic=parent_topic,
+            )
+        else:
+            content = MarkdownGenerator.generate_from_expansion_node(
+                {**node_dict, "display_name": node.display_name}, level=level_str, depth=depth
+            )
 
         self._mark_visited(node.display_name)
         self._mark_visited(node.filename)
@@ -254,7 +279,6 @@ class GraphEngine:
     def _parse_response(self, raw: str, title: str) -> AntigravityResponse | None:
         """Parseia e valida a resposta JSON do LLM com Pydantic."""
         try:
-            # Limpa eventuais wrappers de markdown mesmo com response_mime_type
             clean = re.sub(r"```json\s*", "", raw)
             clean = re.sub(r"```\s*$", "", clean, flags=re.MULTILINE)
             start = clean.find("{")
@@ -268,19 +292,17 @@ class GraphEngine:
         except (json.JSONDecodeError, ValidationError) as e:
             logging.warning(f"[Parser] Falha ao validar resposta para '{title}': {e}")
 
-            # Tentativa de reparo via LLM
             logging.info("[Parser] Tentando reparo via LLM...")
+            schema_ref = (
+                '{"integrity_check":{"detected_redundancies":[],"missing_foundations":[],'
+                '"action_priority":"FOUNDATION_FIRST"},'
+                '"new_nodes":[{"filename":"snake_case","display_name":"Nome","level":0,'
+                '"brief_definition":"...","search_queries":["q1","q2"],"connections":["[[pai]]"]}]}'
+            )
             repair = self.llm.generate(
-                raw,
-                depth=1,
+                raw, depth=1,
                 system_instruction=(
-                    "Fix the following into a valid JSON object matching this schema exactly, "
-                    "no markdown, no extra text:\n"
-                    '{"subject_info":{"title":"...","level":"0_Foundation|1_Core|2_Advanced",'
-                    '"status":"missing_prerequisites|ready_to_expand"},'
-                    '"missing_prerequisites":[{"name":"...","reason":"...","priority":"high"}],'
-                    '"expansion_nodes":[{"filename":"snake_case","display_name":"...","brief_definition":"...",'
-                    '"search_queries":["...","..."],"connections":[]}]}'
+                    f"Fix this into valid JSON matching this schema exactly, no markdown:\n{schema_ref}"
                 ),
             )
             try:
@@ -291,33 +313,34 @@ class GraphEngine:
                 data = json.loads(repair)
                 return AntigravityResponse.model_validate(data)
             except Exception:
-                logging.error(f"[Parser] Reparo falhou para '{title}'. Pulando nó.")
+                logging.error(f"[Parser] Reparo falhou para '{title}'. Pulando no.")
                 return None
 
     # ─────────────────────────────────────────────────────────────
     # Expansão recursiva
     # ─────────────────────────────────────────────────────────────
 
-    def _expand_recursive(self, nodes: List[ExpansionNode], current_depth: int, max_depth: int):
+    def _expand_recursive(self, nodes: List[NewNode], current_depth: int, max_depth: int):
         if current_depth > max_depth:
             return
 
         if self.total_nodes_generated >= self.max_nodes_total:
-            logging.warning("[BUDGET] Limite de nós atingido — abortando recursão.")
+            logging.warning("[BUDGET] Limite de nos atingido — abortando recursao.")
             return
 
         if not self._check_budget():
-            logging.warning("🛑 Orçamento de tokens esgotado — abortando recursão.")
+            logging.warning("\U0001f6d1 Orcamento de tokens esgotado — abortando recursao.")
             return
 
         limit = self._get_depth_decay_limit(current_depth)
-        nodes_to_expand = nodes[:limit]
+        # Expande apenas nos de nivel 1+ (fundamentos nao precisam ser expandidos)
+        nodes_to_expand = [n for n in nodes if n.level >= 1][:limit]
 
-        next_layer: List[ExpansionNode] = []
+        next_layer: List[NewNode] = []
 
         for node in nodes_to_expand:
             if self._is_stop_word(normalize_title(node.display_name)):
-                logging.info(f"  [STOP] '{node.display_name}' é stop word — não decompõe mais.")
+                logging.info(f"  [STOP] '{node.display_name}' e stop word.")
                 continue
 
             if self.total_nodes_generated >= self.max_nodes_total:
@@ -328,7 +351,7 @@ class GraphEngine:
 
             if child_response:
                 self._process_response(child_response, depth=current_depth)
-                next_layer.extend(child_response.expansion_nodes)
+                next_layer.extend(child_response.new_nodes)
 
         if next_layer:
             self._expand_recursive(next_layer, current_depth + 1, max_depth)
