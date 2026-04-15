@@ -261,6 +261,8 @@ class GraphEngine:
     def _call_architect(self, title: str, depth: int) -> AntigravityResponse | None:
         """Chama o LLM com o Prompt Mestre e valida via Pydantic."""
         existing_notes = self.vault.get_existing_notes()
+        # Limita a 60 slugs mais curtos para evitar JSON truncado por excesso de contexto
+        existing_notes = sorted(existing_notes, key=len)[:60]
         existing_str = json.dumps(existing_notes, ensure_ascii=False)
 
         prompt = (

@@ -16,7 +16,7 @@ Compare RADICAIS das palavras, não nomes exatos. Se `existing_notes` contiver u
 Se o tema requer Matemática, Álgebra, Cálculo, Probabilidade, Lógica, ou Python que NÃO constam em `existing_notes`: defina `action_priority: "FOUNDATION_FIRST"` e gere APENAS nós `level: 0`. Não avance para conceitos do tema até os fundamentos estarem mapeados.
 
 ### REGRA 3 — CONCISÃO EXTREMA (TOKEN SAVER)
-Zero texto fora do JSON. Sem introduções, conclusões ou repetições. Se o orçamento for baixo, priorize os 3 nós mais críticos via ordem de dependência.
+Zero texto fora do JSON. Sem introduções, conclusões ou repetições. **Gere no máximo 5 nós por chamada**, priorizando os de maior dependência crítica. Ordene os nós do mais fundamental ao mais avançado.
 
 ### REGRA 4 — FONTES ACADÊMICAS (NOTEBOOKLM)
 `search_queries` deve usar termos otimizados para Google Scholar / ArXiv:
