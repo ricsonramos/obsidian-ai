@@ -1,67 +1,107 @@
-# 🌋 Gênese da Knowledge Engine: A Jornada do Caos à Ordem Semântica
+# 🌌 Antigravity: Autonomous Knowledge Management Engine
 
-Este documento narra a evolução técnica e conceitual do projeto `obsidian-ai`, detalhando os problemas encontrados e as soluções de engenharia que moldaram o que hoje é uma sofisticada fábrica de conhecimento.
-
----
-
-## 🧐 1. O Ponto de Partida: A Ideia
-O projeto nasceu de uma necessidade humana fundamental: **superar o "vácuo" do aprendizado**. O objetivo era simples: eu digito um tema, e o computador me entrega um mapa estruturado (MoC - Map of Content) no Obsidian.
-
-### 🔴 O Problema Inicial (Infraestrutura)
-Ao abrirmos o motor pela primeira vez, encontramos uma "dívida técnica" severa:
-- **Estruturas Fantasmas**: Existiam diretórios legados (`99_System`) que confundiam o aprendizado e o roteamento.
-- **Vácuo de Implementação**: Arquivos críticos como o gerador de Markdown estavam vazios (0 bytes), causando erros fatais de importação.
-- **Engrenagens Rígidas**: Todos os caminhos de pastas e limites de profundidade estavam "chumbados" (hardcoded) no código, impedindo qualquer flexibilidade.
-
-### ✅ A Primeira Solução (Refatoração de Base)
-Limpamos o terreno. Deletamos o legado, unificamos o diretório `core/` e implementamos um **Framework de Renderização Modular**. Externalizamos cada variável — do caminho do Vault ao orçamento de tokens — para um arquivo `.env`. O motor agora era livre para rodar em qualquer máquina.
+**Antigravity** is a sophisticated autonomous system designed to transform a single thematic query into a structured, interconnected, and academically grounded knowledge base within Obsidian. It acts as an **Autonomous Curriculum Architect**, ensuring that learners никогда do not encounter advanced concepts without a solid grasp of their foundation.
 
 ---
 
-## 🏎️ 2. A Transição para a Performance
-Com a base estável, percebemos que a dependência de modelos locais pesados (Ollama) limitava a velocidade e a agilidade do pipeline para o usuário comum.
+## 🎯 Context: The Learning Entropy Problem
+In traditional self-directed study, learners often face two major hurdles:
+1.  **The Prerequisite Gap**: Diving into "Machine Learning" without "Linear Algebra" leads to shallow understanding and frustration.
+2.  **Information Fragmentation (Islands)**: Notes are often created as isolated entities, failing to reflect the interconnected nature of knowledge.
 
-### 🔴 O Problema (Acoplamento e Lerdeza)
-O sistema tentava equilibrar dois modelos diferentes de forma desordenada, gerando lentidão e complexidade desnecessária na CLI.
-
-### ✅ A Solução (A Singularidade Gemini)
-Migramos integralmente para o **Gemini Flash-Lite**. Isso permitiu:
-- Respostas quase instantâneas.
-- Custos controlados e monitorados.
-- Uso de **Google Search Grounding**, garantindo que as notas fossem baseadas em fatos reais da web, não apenas no treinamento interno da IA.
+Antigravity solves this by applying **Autonomous Taxonomy Decomposition** and **Graph-Based Connectivity**.
 
 ---
 
-## 🕸️ 3. A Grande Costura: Lexical vs Semântico
-Mesmo com notas ricas, o Obsidian Graph mostrava um padrão preocupante: **Ilhas de Conhecimento**.
+## 🚀 The Solution: 5-Stage Knowledge Synthesis
 
-### 🔴 O Problema (O Gap das Palavras-Chave)
-O sistema de links original era burro. Se uma nota falava de "Deep Learning" e outra de "Neural Networks", elas raramente se ligavam, porque o algoritmo só procurava por palavras *exatas*. O conhecimento estava lá, mas as pontes estavam quebradas.
+Antigravity operates through a deterministic 5-stage pipeline:
 
-### ✅ A Solução (Stage 4 & Stage 5)
-Implementamos uma abordagem de duas camadas:
-1.  **Stage 4 (Lexical Weaver)**: Um scraper local de alta velocidade que faz o "trabalho sujo" de Regex para termos idênticos sem gastar 1 centavo.
-2.  **Stage 5 (Semantic Bridge - O Ápice)**: Introduzimos a **Matemática Vetorial (RAG)**. Agora o motor "lê" o sentido da nota. Se ele detecta que "Redes Convolucionais" e "Reconhecimento Facial" têm proximidade semântica superior a 82%, ele força uma conexão. **As ilhas se tornaram um arquipélago.**
+### Stage 1: Taxonomic Analysis (The Architect)
+Utilizes LLM reasoning (Gemini Flash) to decompose a topic. 
+- **Backtracking Logic**: Identifies missing L0 (Fundamental) prerequisites. 
+- **MECE Strategy**: Ensures notes are Mutuamente Exclusivos e Coletivamente Exaustivos (no overlaps).
+
+### Stage 2: Recursive Expansion (The Builder)
+Recursively expands the graph based on the target depth.
+- **Tree-to-Graph Transition**: Each node generates sub-nodes, building a hierarchy from L0 (Foundation) to L2+ (Advanced).
+
+### Stage 3: Wikilink Audit (The Auditor)
+A local validation layer that scans the generated content to ensure all internal `[[wikilinks]]` point to existing or planned files, preventing "ghost links."
+
+### Stage 4: Active Cross-Link (The Librarian)
+Scans the entire vault using **Universal Normalization**. It identifies mentions of existing topics within new text and automatically creates backlinks, ensuring the graph is densely populated.
+
+### Stage 5: Semantic Vector Bridge (The Neural Linker)
+The apex of the system. It uses **Mathematical Vector Embeddings** (RAG) to "understand" the meaning of notes.
+- **Cosine Similarity**: If two notes share high semantic proximity (>0.82) but aren't linked, Antigravity forces a connection.
 
 ---
 
-## 🛡️ 4. O Estado Atual: Robustez Total
-Nesta fase final, o projeto parou de ser apenas um script e se tornou um **Sistema de Sistema**.
+## 🛠️ Implementation Details
 
-### 🔴 O Problema (O Erro de Direcionamento)
-Ao lidar com tópicos complexos (ex: "IA: Visão Avançada"), o Windows barrou a execução por caracteres inválidos no sistema de arquivos.
+### Universal Normalization Engine
+To prevent duplication (e.g., "Álgebra" vs "algebra"), Antigravity uses a custom normalization layer:
+- **Accent Stripping**: Accents and special characters are removed for comparison.
+- **Slugification**: Consistent snake_case for filenames.
+- **Root-Word Comparison**: The engine compares the "essence" of titles to enforce MECE principles.
 
-### ✅ A Solução (Blindagem de Caminho)
-Reforçamos o `VaultManager` com sanitização agressiva via Regex, garantindo que qualquer delírio de caractere especial da IA seja convertido em caminhos de arquivo seguros e limpos.
+### Integrity Check Schema (v2)
+Every LLM call is validated against a strict Pydantic schema:
+- `detected_redundancies`: Active monitoring of existing vault nodes.
+- `missing_foundations`: Hard requirement for L0 nodes before L1+ expansion.
+- `action_priority`: Decides between `FOUNDATION_FIRST` or `EXPANSION`.
+
+### NotebookLM Workflow
+Generates specialized search manifests (`research_list.txt`) optimized for **Google NotebookLM**. It provides:
+- **Academic Queries**: Specific technical strings (ArXiv/Scholar optimized) to feed the researcher.
+- **Context Stubs**: Temporary notes that wait for human/AI content insertion after deeper research.
 
 ---
 
-## 🎯 Conclusão: O Que Temos Hoje?
-Hoje, o proprietário do `obsidian-ai` possui uma **Fábrica de Conhecimento de 5 Estágios**:
-1.  **Decomposição** (O Planejador)
-2.  **Expansão** (O Escritor)
-3.  **Auditoria** (O Revisor)
-4.  **Regex Link** (O Bibliotecário)
-5.  **Semantic Bridge** (O Filósofo Matemático)
+## 💻 Technology Stack
 
-A jornada do caos à ordem termina aqui — o motor não apenas gera notas, ele **constrói conexões**. 🕸️🚀
+- **Core Engine**: Python 3.10+
+- **Brain**: [Google Gemini 2.5 Flash](https://aistudio.google.com/) (Superior speed/cost ratio).
+- **Validation**: [Pydantic v2](https://docs.pydantic.dev/) (Strict JSON data contracts).
+- **Persistence**: Obsidian Markdown (YAML Frontmatter + Wikilinks).
+- **NLP**: Sentence Transformers / Gemini Embedding API for Stage 5 link forging.
+- **Environment**: `.env` based configuration for pathing and budgets.
+
+---
+
+## ⚙️ Configuration (.env)
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `VAULT_PATH` | Absolute path to your Obsidian vault. | Required |
+| `MAX_NODES_TOTAL` | Safety limit for node generation per session. | 50 |
+| `MAX_TOKENS_BUDGET` | Token budget per recursive branch. | 8000 |
+| `SEMANTIC_THRESHOLD` | Sensitivity of Stage 5 linking (0.0 to 1.0). | 0.82 |
+| `GEMINI_MODEL` | The model used for reasoning and decomposition. | `gemini-2.5-flash` |
+
+---
+
+## 🏃 Quick Start
+
+1.  **Clone & Install**:
+    ```bash
+    git clone https://github.com/RicsonRamos/obsidian-ai.git
+    pip install -r requirements.txt
+    ```
+2.  **Configure**: Add your `GEMINI_API_KEY` to the `.env` file.
+3.  **Generate**:
+    ```bash
+    # Map a complex topic with foundation backtracking
+    python main.py graph "Quantum Computing" --depth 2
+    ```
+4.  **Link**:
+    ```bash
+    # Run a full semantic audit and cross-link session
+    python main.py link --semantic
+    ```
+
+---
+
+## 📜 Research License
+This tool is built for students, researchers, and knowledge workers who wish to automate the **scaffolding** of their learning, allowing them to focus on active synthesis rather than manual organization.
