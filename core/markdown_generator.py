@@ -14,112 +14,87 @@ class MarkdownGenerator:
         return filename
 
     @staticmethod
-    def generate_from_expansion_node(node: dict, level: str, depth: int) -> str:
+    def generate_from_expansion_node(node: dict, level: str, depth: int, parent_topic: str = "") -> str:
         """
-        Gera nota Obsidian a partir de um ExpansionNode do schema Antigravity.
-        Campos: filename, display_name, brief_definition, search_queries, connections
+        Gera nota Obsidian com suporte a RAG para expansão de conceitos.
         """
         display_name = node.get("display_name", node.get("filename", "Untitled"))
-        brief_def = node.get("brief_definition", "")
-        search_queries = node.get("search_queries", [])
-        connections = node.get("connections", [])
-        now = datetime.now().isoformat(timespec="seconds")
-
+        related = node.get("connections", [])
+        
+        source_path = os.getenv("PDF_SOURCE_PATH", "G:\\Meu Drive\\Vault 101\\02-Direito Penal\\Livros")
+        
         md_lines = ["---"]
         md_lines.append(f'title: "{display_name}"')
-        md_lines.append("status: research")
-        md_lines.append(f"hierarchy_level: {level}")
-
-        if search_queries:
-            md_lines.append("primary_queries:")
-            for q in search_queries:
-                md_lines.append(f'  - "{q}"')
-
-        if connections:
-            conn_str = ", ".join(connections)
-            md_lines.append(f"connections: [{conn_str}]")
-
-        md_lines.append(f"generated: {now}")
-        md_lines.append(f"source_depth: {depth}")
-        tag = level.replace("|", "_").replace(" ", "_")
-        md_lines.append(f"tags: [knowledge-engine, {tag}]")
+        md_lines.append(f'level: "{level}"')
+        md_lines.append('subject: "Direito Penal"')
+        md_lines.append(f'source_path: "{source_path}"')
+        md_lines.append(f'search_query: "Definição e doutrina sobre {display_name} no contexto de {parent_topic}"')
+        md_lines.append('status: "waiting_ollama_rag"')
         md_lines.append("---")
         md_lines.append("")
         md_lines.append(f"# {display_name}")
         md_lines.append("")
-
-        if brief_def:
-            md_lines.append(f"> {brief_def}")
-            md_lines.append("")
-
-        if search_queries:
-            md_lines.append("## Queries de Pesquisa (NotebookLM)")
-            for q in search_queries:
-                md_lines.append(f"- {q}")
-            md_lines.append("")
-
-        if connections:
-            md_lines.append("## Conexoes")
-            for c in connections:
-                md_lines.append(f"- {c}")
-
+        md_lines.append("## 📝 Resumo da Doutrina")
+        md_lines.append("(Aguardando processamento RAG via Ollama...)")
+        md_lines.append("")
+        md_lines.append("## 🔍 Perguntas para o Modelo Local (Passo 3):")
+        md_lines.append(f"1. Quais os elementos constitutivos de {display_name} segundo a fonte?")
+        md_lines.append("2. Existe divergência doutrinária relevante neste ponto?")
+        md_lines.append(f"3. Como este conceito se aplica na atividade operacional da PMMG?")
+        md_lines.append("")
+        
+        footer = []
+        if parent_topic:
+            footer.append(f"[[{parent_topic}]]")
+        for r in related:
+            footer.append(r)
+            
+        md_lines.append(" | ".join(footer))
+        
         return "\n".join(md_lines)
 
     @staticmethod
     def generate_prerequisite_stub(prereq: dict, depth: int, parent_topic: str = "") -> str:
         """
-        Gera stub de nota L0 para pré-requisito faltante.
-        Campos: name, reason, priority
-        Inclui backlink para o tópico pai (parent_topic) na seção Conexoes.
+        Gera nota Obsidian com suporte a RAG para pré-requisitos (Nível 0).
         """
         name = prereq.get("name", "Pre-requisito")
-        reason = prereq.get("reason", "")
-        now = datetime.now().isoformat(timespec="seconds")
+        source_path = os.getenv("PDF_SOURCE_PATH", "G:\\Meu Drive\\Vault 101\\02-Direito Penal\\Livros")
 
         md_lines = ["---"]
         md_lines.append(f'title: "{name}"')
-        md_lines.append("status: research")
-        md_lines.append("hierarchy_level: 0_Foundation")
-        if parent_topic:
-            md_lines.append(f'parent: "{parent_topic}"')
-        md_lines.append(f"generated: {now}")
-        md_lines.append(f"source_depth: {depth}")
-        md_lines.append("tags: [knowledge-engine, 0_Foundation, prerequisite]")
+        md_lines.append('level: "0_Foundation"')
+        md_lines.append('subject: "Direito Penal"')
+        md_lines.append(f'source_path: "{source_path}"')
+        md_lines.append(f'search_query: "Conceitos fundamentais de {name} aplicados ao Direito Penal"')
+        md_lines.append('status: "waiting_ollama_rag"')
         md_lines.append("---")
         md_lines.append("")
         md_lines.append(f"# {name}")
         md_lines.append("")
-
-        if reason:
-            md_lines.append(f"> **Por que estudar isso primeiro:** {reason}")
-            md_lines.append("")
-
-        md_lines.append("## Notas de Estudo")
-        md_lines.append("_Adicione aqui o resumo do NotebookLM apos concluir a pesquisa._")
+        md_lines.append("## 📝 Resumo da Doutrina")
+        md_lines.append("(Aguardando processamento RAG via Ollama...)")
         md_lines.append("")
-
+        md_lines.append("## 🔍 Perguntas para o Modelo Local (Passo 3):")
+        md_lines.append(f"1. Quais os elementos constitutivos de {name} segundo a fonte?")
+        md_lines.append("2. Existe divergência doutrinária relevante neste ponto?")
+        md_lines.append(f"3. Como este conceito se aplica na atividade operacional da PMMG?")
+        md_lines.append("")
+        
         if parent_topic:
-            md_lines.append("## Conexoes")
-            md_lines.append(f"- [[{parent_topic}]]")
-
+            md_lines.append(f"[[{parent_topic}]]")
+            
         return "\n".join(md_lines)
 
     @staticmethod
     def generate_hub_note(topic_title: str, level: str, prereq_links: list, depth: int) -> str:
         """
         Gera nota MOC (hub/raiz) para o tópico principal.
-        Inclui links para todos os pré-requisitos na seção Prerequisitos.
         """
-        now = datetime.now().isoformat(timespec="seconds")
-        tag = level.replace("|", "_").replace(" ", "_")
-
         md_lines = ["---"]
         md_lines.append(f'title: "{topic_title}"')
-        md_lines.append("status: hub")
-        md_lines.append(f"hierarchy_level: {level}")
-        md_lines.append(f"generated: {now}")
-        md_lines.append(f"source_depth: {depth}")
-        md_lines.append(f"tags: [knowledge-engine, {tag}, hub]")
+        md_lines.append('status: "hub"')
+        md_lines.append(f'level: "{level}"')
         md_lines.append("---")
         md_lines.append("")
         md_lines.append(f"# {topic_title}")

@@ -26,3 +26,19 @@ Thumbs.db
 
 # Ignora o Vault (se você quiser versionar o seu banco de MDs nativamente, remova ou comente esta linha)
 vault/
+
+# Dashboard (Frontend)
+gui/node_modules/
+gui/.next/
+.next/
+node_modules/
+
+# Livros e Dados Pesados
+*.pdf
+*.epub
+research_list.txt
+
+# Caches de ferramentas e experimentos
+.cache_*.json
+.ipynb_checkpoints/
+walkthrough.md

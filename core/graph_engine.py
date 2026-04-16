@@ -48,13 +48,16 @@ class GraphEngine:
         resume: bool = False,
         target_stage: str = "all",
         max_tokens_budget: int = 2000,
+        log_callback: callable = None,
+        vault_path: str = None,
     ):
         self.dry_run = dry_run
         self.resume = resume
         self.target_stage = str(target_stage).lower()
         self.max_tokens_budget = max_tokens_budget
+        self.log_callback = log_callback
 
-        vault_path = os.getenv("VAULT_PATH", "./vault")
+        vault_path = vault_path or os.getenv("VAULT_PATH", "./vault")
         self.vault = VaultManager(vault_path)
         self.llm = HybridLLM()
         self.linker = Linker(vault_path)
@@ -83,7 +86,10 @@ class GraphEngine:
     def run(self, topic: str, target_depth: int):
         self.base_topic = topic
 
-        logging.info(f"🧠 Antigravity | Tema: '{topic}' | Profundidade: {target_depth}")
+        # Executa a padronização automática e limpeza de duplicatas antes de iniciar
+        self.vault.sanitize_vault(self.log_callback)
+
+        self._log(f"🧠 Antigravity | Tema: '{topic}' | Profundidade: {target_depth}")
 
         run_stage_1 = self.target_stage in ["all", "1"]
         run_stage_2 = self.target_stage in ["all", "2"]
@@ -94,17 +100,17 @@ class GraphEngine:
         root_response: AntigravityResponse | None = None
 
         if run_stage_1:
-            logging.info("=== STAGE 1: ANÁLISE TAXONÔMICA (Arquiteto) ===")
+            self._log("=== STAGE 1: ANÁLISE TAXONÔMICA (Arquiteto) ===")
             root_response = self._call_architect(topic, depth=1)
 
             if not root_response:
-                logging.error("Falha na chamada ao Arquiteto Taxonomista.")
+                self._log("Falha na chamada ao Arquiteto Taxonomista.", level="error")
                 return
 
             self._process_response(root_response, depth=1)
 
         if run_stage_2 and root_response and target_depth > 1:
-            logging.info("=== STAGE 2: EXPANSÃO RECURSIVA ===")
+            self._log("=== STAGE 2: EXPANSÃO RECURSIVA ===")
             ready_nodes = root_response.new_nodes
             self._expand_recursive(ready_nodes, current_depth=2, max_depth=target_depth)
 
@@ -130,7 +136,7 @@ class GraphEngine:
     # Gap Logic + Processamento da resposta do Arquiteto
     # ─────────────────────────────────────────────────────────────
 
-    def _process_response(self, response: AntigravityResponse, depth: int):
+    def _process_response(self, response: AntigravityResponse, depth: int, parent_topic: str = ""):
         """
         Processa a resposta do Arquiteto v2 (schema new_nodes).
         - FOUNDATION_FIRST (level 0): cria hub + stubs L0 com backlinks.
@@ -138,18 +144,20 @@ class GraphEngine:
         """
         ic = response.integrity_check
         nodes = response.new_nodes
+        
+        # Se for a raiz absoluta, usa o base_topic como pai
+        p_topic = parent_topic or self.base_topic
 
         if ic.detected_redundancies:
-            logging.info(f"  [MECE] Redundancias detectadas: {ic.detected_redundancies}")
+            self._log(f"  [MECE] Redundancias detectadas: {ic.detected_redundancies}")
         if ic.missing_foundations:
-            logging.info(f"  [GAP] Fundamentos ausentes: {ic.missing_foundations}")
+            self._log(f"  [GAP] Fundamentos ausentes: {ic.missing_foundations}")
 
         foundation_nodes = [n for n in nodes if n.level == 0]
-        expansion_nodes  = [n for n in nodes if n.level > 0]
 
         # Cria nota HUB do topico raiz se houver fundamentos
         if foundation_nodes and ic.action_priority == "FOUNDATION_FIRST":
-            logging.info(f"  [GAP] FOUNDATION_FIRST — criando hub + {len(foundation_nodes)} nos L0...")
+            self._log(f"  [GAP] FOUNDATION_FIRST — criando hub + {len(foundation_nodes)} nos L0...")
             prereq_links = [f"[[{n.display_name}]]" for n in foundation_nodes]
             self._create_root_hub_note(self.base_topic, "1_Core", prereq_links, depth)
 
@@ -157,7 +165,7 @@ class GraphEngine:
                 self._create_new_node(node, depth, parent_topic=self.base_topic)
         else:
             for node in nodes:
-                self._create_new_node(node, depth)
+                self._create_new_node(node, depth, parent_topic=p_topic)
 
     def _create_root_hub_note(self, topic_title: str, level: str, prereq_links: list, depth: int):
         """Cria a nota MOC (hub) para o tópico raiz, conectando-o aos pré-requisitos."""
@@ -171,56 +179,28 @@ class GraphEngine:
 
         if not self.dry_run:
             self.vault.save_node(filename, content, subfolder=self.base_topic)
-            logging.info(f"  [HUB] {filename} (raiz com {len(prereq_links)} pré-requisitos)")
+            self._log(f"  [HUB] {filename} (raiz com {len(prereq_links)} pré-requisitos)")
         else:
-            logging.info(f"  [DRY-HUB] {filename}")
-
-        self.total_nodes_generated += 1
-
-    def _create_prerequisite_note(self, prereq: MissingPrerequisite, depth: int, parent_topic: str = ""):
-        """Cria nota stub para pré-requisito faltante (Nível 0 / Foundation)."""
-        normalized_name = normalize_title(prereq.name)
-
-        if self._is_stop_word(normalized_name):
-            logging.info(f"  [STOP] '{prereq.name}' é stop word — não decomponho mais.")
-            return
-
-        if self._already_exists(prereq.name):
-            logging.info(f"  [SKIP] Pré-requisito já existe: '{prereq.name}'")
-            return
-
-        logging.info(f"  [L0] Criando pré-requisito: {prereq.name}")
-        filename = MarkdownGenerator.normalize_filename(prereq.name)
-        content = MarkdownGenerator.generate_prerequisite_stub(
-            prereq.model_dump(), depth=depth, parent_topic=parent_topic
-        )
-
-        self._mark_visited(prereq.name)
-
-        if not self.dry_run:
-            self.vault.save_node(filename, content, subfolder=self.base_topic)
-            logging.info(f"     [+] {filename}")
-        else:
-            logging.info(f"     [DRY-RUN] {filename}")
+            self._log(f"  [DRY-HUB] {filename}")
 
         self.total_nodes_generated += 1
 
     def _create_new_node(self, node: NewNode, depth: int, parent_topic: str = ""):
         """Cria nota a partir de um NewNode (schema v2)."""
         if self._already_exists(node.display_name) or self._already_exists(node.filename):
-            logging.info(f"  [SKIP] Ja existe: '{node.display_name}'")
+            self._log(f"  [SKIP] Ja existe: '{node.display_name}'")
             return
 
         if node.filename and self._is_stop_word(normalize_title(node.filename)):
-            logging.info(f"  [STOP] '{node.display_name}' e stop word.")
+            self._log(f"  [STOP] '{node.display_name}' e stop word.")
             return
 
         if self.total_nodes_generated >= self.max_nodes_total:
-            logging.warning("[BUDGET] Limite de nos atingido.")
+            self._log("[BUDGET] Limite de nos atingido.", level="warning")
             return
 
         level_str = ["0_Foundation", "1_Core", "2_Advanced"][min(node.level, 2)]
-        logging.info(f"  [NODE] {node.display_name} ({level_str})")
+        self._log(f"  [NODE] {node.display_name} ({level_str})")
 
         node_dict = node.model_dump()
         # Injeta parent_topic como conexao se fornecido e ainda nao presente
@@ -234,23 +214,28 @@ class GraphEngine:
 
         if node.level == 0:
             content = MarkdownGenerator.generate_prerequisite_stub(
-                {"name": node.display_name, "reason": node.brief_definition, "priority": "high"},
+                {
+                    "name": node.display_name,
+                    "reason": node.brief_definition,
+                    "priority": "high",
+                    "search_queries": node.search_queries
+                },
                 depth=depth,
                 parent_topic=parent_topic,
             )
         else:
             content = MarkdownGenerator.generate_from_expansion_node(
-                {**node_dict, "display_name": node.display_name}, level=level_str, depth=depth
+                {**node_dict, "display_name": node.display_name}, level=level_str, depth=depth, parent_topic=parent_topic
             )
 
         self._mark_visited(node.display_name)
         self._mark_visited(node.filename)
 
         if not self.dry_run:
-            self.vault.save_node(filename, content, subfolder=self.base_topic)
-            logging.info(f"     [+] {filename}")
+            self.vault.save_node(node.display_name, content, subfolder=self.base_topic)
+            self._log(f"     [+] {filename}")
         else:
-            logging.info(f"     [DRY-RUN] {filename}")
+            self._log(f"     [DRY-RUN] {filename}")
 
         self.total_nodes_generated += 1
 
@@ -273,7 +258,7 @@ class GraphEngine:
 
         raw = self.llm.generate(prompt, depth=depth)
         if not raw:
-            logging.error(f"LLM retornou vazio para '{title}'.")
+            self._log(f"LLM retornou vazio para '{title}'.", level="error")
             return None
 
         return self._parse_response(raw, title)
@@ -292,9 +277,9 @@ class GraphEngine:
             return AntigravityResponse.model_validate(data)
 
         except (json.JSONDecodeError, ValidationError) as e:
-            logging.warning(f"[Parser] Falha ao validar resposta para '{title}': {e}")
+            self._log(f"[Parser] Falha ao validar resposta para '{title}': {e}", level="warning")
 
-            logging.info("[Parser] Tentando reparo via LLM...")
+            self._log("[Parser] Tentando reparo via LLM...")
             schema_ref = (
                 '{"integrity_check":{"detected_redundancies":[],"missing_foundations":[],'
                 '"action_priority":"FOUNDATION_FIRST"},'
@@ -315,7 +300,7 @@ class GraphEngine:
                 data = json.loads(repair)
                 return AntigravityResponse.model_validate(data)
             except Exception:
-                logging.error(f"[Parser] Reparo falhou para '{title}'. Pulando no.")
+                self._log(f"[Parser] Reparo falhou para '{title}'. Pulando no.", level="error")
                 return None
 
     # ─────────────────────────────────────────────────────────────
@@ -327,11 +312,11 @@ class GraphEngine:
             return
 
         if self.total_nodes_generated >= self.max_nodes_total:
-            logging.warning("[BUDGET] Limite de nos atingido — abortando recursao.")
+            self._log("[BUDGET] Limite de nos atingido — abortando recursao.", level="warning")
             return
 
         if not self._check_budget():
-            logging.warning("\U0001f6d1 Orcamento de tokens esgotado — abortando recursao.")
+            self._log("🛑 Orcamento de tokens esgotado — abortando recursao.", level="warning")
             return
 
         limit = self._get_depth_decay_limit(current_depth)
@@ -342,17 +327,17 @@ class GraphEngine:
 
         for node in nodes_to_expand:
             if self._is_stop_word(normalize_title(node.display_name)):
-                logging.info(f"  [STOP] '{node.display_name}' e stop word.")
+                self._log(f"  [STOP] '{node.display_name}' e stop word.")
                 continue
 
             if self.total_nodes_generated >= self.max_nodes_total:
                 break
 
-            logging.info(f"  → Expandindo [L{current_depth}]: {node.display_name}")
+            self._log(f"  → Expandindo [L{current_depth}]: {node.display_name}")
             child_response = self._call_architect(node.display_name, depth=current_depth)
 
             if child_response:
-                self._process_response(child_response, depth=current_depth)
+                self._process_response(child_response, depth=current_depth, parent_topic=node.display_name)
                 next_layer.extend(child_response.new_nodes)
 
         if next_layer:
@@ -395,9 +380,21 @@ class GraphEngine:
             return limits[2] if len(limits) > 2 else 2
 
     def _print_report(self):
-        logging.info("═══════════════════════════════════════")
-        logging.info("📊 ANTIGRAVITY — RELATÓRIO DA SESSÃO")
-        logging.info(f"  → Nós gerados       : {self.total_nodes_generated}")
-        logging.info(f"  → Tokens consumidos : ~{int(self.llm.session_tokens)} / {self.max_tokens_budget}")
-        logging.info(f"  → Chamadas ao LLM   : {self.llm._gemini_calls}")
-        logging.info("═══════════════════════════════════════")
+        self._log("═══════════════════════════════════════")
+        self._log("📊 ANTIGRAVITY — RELATÓRIO DA SESSÃO")
+        self._log(f"  → Nós gerados       : {self.total_nodes_generated}")
+        self._log(f"  → Tokens consumidos : ~{int(self.llm.session_tokens)} / {self.max_tokens_budget}")
+        self._log(f"  → Chamadas ao LLM   : {self.llm._gemini_calls}")
+        self._log("═══════════════════════════════════════")
+
+    def _log(self, message: str, level: str = "info"):
+        """Envia logs para o logger padrão e para o callback da interface, se definido."""
+        if level == "info":
+            logging.info(message)
+        elif level == "warning":
+            logging.warning(message)
+        elif level == "error":
+            logging.error(message)
+        
+        if self.log_callback:
+            self.log_callback(message, level)
